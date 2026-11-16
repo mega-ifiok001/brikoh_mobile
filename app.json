@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#fbf9f5",
     "newArchEnabled": true,
     "splash": {
@@ -50,6 +50,12 @@
         "projectId": "08f313f7-4b55-4739-afc4-5a35b4885633"
       }
     },
-    "owner": "aniebiet001"
+    "owner": "aniebiet001",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/08f313f7-4b55-4739-afc4-5a35b4885633"
+    }
   }
 }

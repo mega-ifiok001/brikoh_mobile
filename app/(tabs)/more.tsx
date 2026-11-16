@@ -4,6 +4,8 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
+import { useTheme, type ThemePref } from "../../src/context/ThemeContext";
+import { Segmented } from "../../src/components/kit";
 import { api } from "../../src/lib/api";
 import { getAccess, type Feature } from "../../src/lib/access";
 import { ago, fd, titleCase } from "../../src/lib/format";
@@ -80,6 +82,7 @@ function alertText(n: any): string {
 
 export default function More() {
   const { me, logout } = useAuth();
+    const { pref, setPref } = useTheme();
   const router = useRouter();
   const access = getAccess(me);
   const store = me.store || {};
@@ -128,9 +131,10 @@ export default function More() {
         </Card>
 
         {store.subdomain ? (
+          
           <Card onPress={() => Linking.openURL(`https://${store.subdomain}.brikoh.com`)} style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 12, marginTop: 2 }}>
-            <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: C.ink900, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="globe-outline" size={19} color={C.cream50} />
+            <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: C.solid, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="globe-outline" size={19} color={C.onSolid} />
             </View>
             <View style={{ flex: 1 }}>
               <T w="bold" size={14}>
@@ -202,7 +206,20 @@ export default function More() {
             </Card>
           </View>
         ))}
-
+        <View style={{ gap: 8 }}>
+          <SectionLabel>Appearance</SectionLabel>
+          <Card style={{ padding: 10 }}>
+            <Segmented
+              options={[
+                { value: "system", label: "System" },
+                { value: "light", label: "Light" },
+                { value: "dark", label: "Dark" },
+              ]}
+              value={pref}
+              onChange={(v) => setPref(v as ThemePref)}
+            />
+          </Card>
+        </View>
         <Card
           onPress={async () => {
             await logout();

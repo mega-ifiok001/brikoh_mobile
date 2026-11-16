@@ -77,17 +77,17 @@ export function Card({
 /* ---------------------------------- Pill ---------------------------------- */
 
 export type Tone = "green" | "gold" | "danger" | "neutral" | "brand" | "dark";
-const TONES: Record<Tone, { bg: string; fg: string }> = {
+const tones = (): Record<Tone, { bg: string; fg: string }> => ({
   green: { bg: C.leaf100, fg: C.leaf500 },
   gold: { bg: C.gold100, fg: C.gold600 },
   danger: { bg: C.danger100, fg: C.danger500 },
   neutral: { bg: C.cream100, fg: C.ink500 },
   brand: { bg: C.brand50, fg: C.brand },
-  dark: { bg: C.ink900, fg: C.white },
-};
+  dark: { bg: C.solid, fg: C.onSolid },
+});
 
 export function Pill({ children, tone = "neutral" }: { children: ReactNode; tone?: Tone }) {
-  const t = TONES[tone];
+  const t = tones()[tone];
   return (
     <View style={{ backgroundColor: t.bg, borderRadius: R.pill, paddingHorizontal: 9, paddingVertical: 3, alignSelf: "flex-start" }}>
       <T w="extra" size={10.5} color={t.fg}>
@@ -167,8 +167,8 @@ export function Button({
   small?: boolean;
 }) {
   const bg =
-    variant === "primary" ? C.brand : variant === "dark" ? C.ink900 : variant === "danger" ? C.danger100 : variant === "outline" ? C.white : "transparent";
-  const fg = variant === "outline" ? C.ink900 : variant === "ghost" ? C.brand : variant === "danger" ? C.danger500 : C.white;
+    variant === "primary" ? C.brand : variant === "dark" ? C.solid : variant === "danger" ? C.danger100 : variant === "outline" ? C.white : "transparent";
+  const fg = variant === "outline" ? C.ink900 : variant === "ghost" ? C.brand : variant === "danger" ? C.danger500 : variant === "dark" ? C.onSolid : C.onBrand;
   const off = disabled || busy;
   return (
     <Pressable
@@ -238,6 +238,9 @@ export function Field({
   );
 }
 
+// Removes the browser's default focus outline (web only; ignored on phones).
+const NO_OUTLINE: any = { outlineStyle: "none", outlineWidth: 0 };
+
 export function Input({
   dark,
   style,
@@ -272,7 +275,10 @@ export function Input({
           p.onBlur?.(e);
         }}
         placeholderTextColor={dark ? "#6f7a73" : C.ink300}
-        style={{ flex: 1, fontFamily: F.semi, fontSize: 15, color: dark ? C.cream50 : C.ink900, height: "100%" }}
+        underlineColorAndroid="transparent"
+        selectionColor={C.brand}
+        cursorColor={C.brand}
+        style={[{ flex: 1, fontFamily: F.semi, fontSize: 15, color: dark ? C.cream50 : C.ink900, height: "100%" }, NO_OUTLINE]}
       />
       {right}
     </View>
@@ -311,7 +317,10 @@ export function SearchBar({
         autoCorrect={false}
         autoCapitalize="none"
         returnKeyType="search"
-        style={{ flex: 1, fontFamily: F.semi, fontSize: 14, color: C.ink900, height: "100%" }}
+        underlineColorAndroid="transparent"
+        selectionColor={C.brand}
+        cursorColor={C.brand}
+        style={[{ flex: 1, fontFamily: F.semi, fontSize: 14, color: C.ink900, height: "100%" }, NO_OUTLINE]}
       />
       {value ? (
         <Pressable onPress={() => onChangeText("")} hitSlop={10}>
@@ -335,12 +344,12 @@ export function Chip({ label, on, onPress }: { label: string; on?: boolean; onPr
         paddingHorizontal: 14,
         paddingVertical: 8,
         borderRadius: R.pill,
-        backgroundColor: on ? C.ink900 : C.white,
+               backgroundColor: on ? C.solid : C.white,
         borderWidth: 1,
-        borderColor: on ? C.ink900 : C.cream200,
+        borderColor: on ? C.solid : C.cream200,
       }}
     >
-      <T w="bold" size={12.5} color={on ? C.white : C.ink500}>
+      <T w="bold" size={12.5} color={on ? C.onSolid : C.ink500}>
         {label}
       </T>
     </Pressable>
@@ -361,7 +370,7 @@ export function Avatar({ name, size = 40, dark }: { name?: string | null; size?:
         justifyContent: "center",
       }}
     >
-      <T w="extra" size={size * 0.33} color={dark ? C.white : C.ink500}>
+      <T w="extra" size={size * 0.33} color={dark ? C.onBrand : C.ink500}>
         {initialsOf(name)}
       </T>
     </View>
@@ -476,7 +485,7 @@ export function IconButton({ name, onPress, dark, badge }: { name: IconName; onP
         opacity: pressed ? 0.8 : 1,
       })}
     >
-      <Ionicons name={name} size={20} color={dark ? C.white : C.ink700} />
+      <Ionicons name={name} size={20} color={dark ? C.onBrand : C.ink700} />
       {badge ? (
         <View style={{ position: "absolute", top: 8, right: 9, width: 9, height: 9, borderRadius: 9, backgroundColor: C.brand, borderWidth: 2, borderColor: C.white }} />
       ) : null}
@@ -571,7 +580,7 @@ export function ToastHost() {
   }, [y]);
 
   if (!msg) return null;
-  const bg = msg.kind === "error" ? C.danger500 : msg.kind === "success" ? C.leaf500 : C.ink900;
+  const bg = msg.kind === "error" ? "#c2402f" : msg.kind === "success" ? "#1e7a4f" : "#0A100D";
   const icon: IconName = msg.kind === "error" ? "alert-circle" : msg.kind === "success" ? "checkmark-circle" : "information-circle";
   return (
     <Animated.View

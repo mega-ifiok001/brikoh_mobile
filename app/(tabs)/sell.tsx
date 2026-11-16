@@ -299,7 +299,7 @@ export default function Sell() {
             bottom: 10,
             height: 62,
             borderRadius: 22,
-            backgroundColor: C.ink900,
+           backgroundColor: C.night,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
@@ -314,7 +314,7 @@ export default function Sell() {
                 {itemCount}
               </T>
             </View>
-            <T w="semi" size={13} color={C.ink300}>
+            <T w="semi" size={13} color={C.nightMuted}>
               {itemCount === 1 ? "item" : "items"}
             </T>
           </Pressable>
@@ -392,10 +392,10 @@ export default function Sell() {
                       tap();
                       setMethod(m.id);
                     }}
-                    style={{ flex: 1, height: 62, borderRadius: 16, alignItems: "center", justifyContent: "center", gap: 4, backgroundColor: on ? C.ink900 : C.white, borderWidth: 1, borderColor: on ? C.ink900 : C.cream300 }}
+                    style={{ flex: 1, height: 62, borderRadius: 16, alignItems: "center", justifyContent: "center", gap: 4, backgroundColor: on ? C.solid : C.white, borderWidth: 1, borderColor: on ? C.solid : C.cream300 }}
                   >
-                    <Ionicons name={m.icon as any} size={19} color={on ? "#fff" : C.ink500} />
-                    <T w="bold" size={11.5} color={on ? "#fff" : C.ink500}>
+                    <Ionicons name={m.icon as any} size={19} color={on ? C.onSolid : C.ink500} />
+                  <T w="bold" size={11.5} color={on ? C.onSolid : C.ink500}>
                       {m.label}
                     </T>
                   </Pressable>

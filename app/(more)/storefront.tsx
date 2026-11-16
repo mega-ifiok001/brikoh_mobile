@@ -256,7 +256,7 @@ function Studio() {
           const active = t.id === selectedId;
           return (
             <Card key={t.id} style={{ padding: 0, overflow: "hidden", borderWidth: active ? 2 : 1, borderColor: active ? C.brand : C.cream200 }}>
-              <View style={{ height: 130, backgroundColor: i % 3 === 1 ? C.ink900 : i % 3 === 2 ? C.brand : C.cream100 }}>
+              <View style={{ height: 130, backgroundColor: i % 3 === 1 ? C.night : i % 3 === 2 ? C.brand : C.cream100 }}>
                 {t.previewUrl ? (
                   <Image source={{ uri: t.previewUrl }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
                 ) : (

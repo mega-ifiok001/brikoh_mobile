@@ -12,7 +12,7 @@ import { C } from "../../src/theme";
 
 const CATEGORIES = ["RENT", "TRANSPORT", "PACKAGING", "SALARIES", "MARKETING", "UTILITIES", "OTHER"] as const;
 
-const CAT_COLOR: Record<string, string> = {
+const catColors = (): Record<string, string> => ({
   RENT: C.brand,
   TRANSPORT: C.ink700,
   PACKAGING: C.gold600,
@@ -20,7 +20,7 @@ const CAT_COLOR: Record<string, string> = {
   MARKETING: "#f4a766",
   UTILITIES: C.ink400,
   OTHER: C.cream300,
-};
+});
 
 function monthBounds(offset: number): { from: Date; to: Date } {
   const now = new Date();
@@ -215,7 +215,7 @@ export default function Expenses() {
                   <Money v={amt} currency={currency} size={12} />
                 </View>
                 <View style={{ height: 8, borderRadius: 8, backgroundColor: C.cream100, overflow: "hidden" }}>
-                  <View style={{ height: 8, borderRadius: 8, backgroundColor: CAT_COLOR[cat] || C.ink400, width: `${Math.min(100, Math.max(6, (amt / (total || 1)) * 100))}%` }} />
+                  <View style={{ height: 8, borderRadius: 8, backgroundColor: catColors()[cat] || C.ink400, width: `${Math.min(100, Math.max(6, (amt / (total || 1)) * 100))}%` }} />
                 </View>
               </View>
             ))}

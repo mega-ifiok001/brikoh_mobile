@@ -108,8 +108,8 @@ export default function Home() {
         {/* Store bar */}
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 6 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: C.ink900, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="storefront" size={18} color={C.cream50} />
+            <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: C.solid, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="storefront" size={18} color={C.onSolid} />
             </View>
             <View style={{ flex: 1 }}>
               <T w="extra" size={14} numberOfLines={1}>
@@ -151,20 +151,20 @@ export default function Home() {
           <>
             {/* Hero revenue card */}
             <LinearGradient
-              colors={[C.ink900, "#1a211d"]}
+              colors={[C.night, "#202a24"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={{ marginHorizontal: 16, marginTop: 16, borderRadius: 24, padding: 18, overflow: "hidden" }}
             >
               <View style={{ position: "absolute", right: -40, top: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: "rgba(236,100,5,0.28)" }} />
-              <T w="bold" size={12} color={C.ink300}>
+              <T w="bold" size={12} color={C.nightMuted}>
                 Revenue · last 30 days
               </T>
               <T w="display" size={34} color="#fff" style={{ marginTop: 4, letterSpacing: -0.8 }}>
                 {canViewProfit ? fm(kpis.revenue, currency) : "Hidden"}
               </T>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 }}>
-                <T w="semi" size={12.5} color={C.ink300}>
+                <T w="semi" size={12.5} color={C.nightMuted}>
                   {canViewProfit
                     ? kpis.avgOrderValue
                       ? `Avg order ${fm(kpis.avgOrderValue, currency, { compact: true })}`

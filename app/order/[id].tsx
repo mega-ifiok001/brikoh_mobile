@@ -176,7 +176,7 @@ export default function OrderDetail() {
 
             {/* Bank transfer claim */}
             {order.bankDetails && (
-              <Card style={{ padding: 16, gap: 4, backgroundColor: "#fffdf7", borderColor: "#f0dcae" }}>
+              <Card style={{ padding: 16, gap: 4, backgroundColor: C.warnBg, borderColor: C.warnBorder }}>
                 <T w="extra" size={13} color={C.gold600}>
                   Customer says they paid by bank transfer
                 </T>

@@ -96,7 +96,7 @@ export default function Orders() {
           renderItem={({ item: o }) => {
             const awaiting = o.status === "AWAITING_PAYMENT";
             return (
-              <Card onPress={() => router.push(`/order/${o.id}`)} style={{ padding: 14, borderColor: awaiting ? "#f0dcae" : C.cream200, backgroundColor: awaiting ? "#fffdf7" : C.white }}>
+              <Card onPress={() => router.push(`/order/${o.id}`)} style={{ padding: 14, borderColor:awaiting ? C.warnBorder : C.cream200, backgroundColor: awaiting ? C.warnBg : C.white }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <T w="extra" size={14.5} numberOfLines={1} style={{ flex: 1, marginRight: 10 }}>
                     {o.customer?.name || "Walk-in"}

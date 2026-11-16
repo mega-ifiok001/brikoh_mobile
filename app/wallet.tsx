@@ -163,7 +163,7 @@ export default function Wallet() {
                     }}
                     style={({ pressed }) => ({ backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 22, height: 44, justifyContent: "center", opacity: rawNum(available) < 100 ? 0.55 : pressed ? 0.85 : 1 })}
                   >
-                    <T w="extra" size={13.5} color={C.ink900}>
+                    <T w="extra" size={13.5} color="#0A100D">
                       Withdraw
                     </T>
                   </Pressable>

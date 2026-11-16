@@ -38,7 +38,7 @@ export default function Login() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.ink900 }}>
+    <View style={{ flex: 1, backgroundColor: C.night }}>
       <LinearGradient colors={["rgba(236,100,5,0.28)", "rgba(236,100,5,0)"]} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 360 }} />
       <SafeAreaView style={{ flex: 1 }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -46,10 +46,10 @@ export default function Login() {
             <Image source={require("../../assets/logo-white.png")} style={{ width: 112, height: 28, marginTop: 14 }} resizeMode="contain" />
 
             <View style={{ marginTop: 56 }}>
-              <T w="display" size={36} color={C.cream50} style={{ lineHeight: 40, letterSpacing: -0.8 }}>
+              <T w="display" size={36} color={C.onNight} style={{ lineHeight: 40, letterSpacing: -0.8 }}>
                 Run your whole shop from your pocket.
               </T>
-              <T w="regular" size={14.5} color={C.ink300} style={{ marginTop: 12, lineHeight: 22 }}>
+              <T w="regular" size={14.5} color={C.nightMuted} style={{ marginTop: 12, lineHeight: 22 }}>
                 Sales, stock, orders and your wallet — in one place.
               </T>
             </View>
