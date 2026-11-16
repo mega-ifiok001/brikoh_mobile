@@ -1,19 +1,54 @@
 // Native port of the web announcements banner. Shows the newest un-dismissed announcement
-// for this store's tier. Dismissals are kept in module-level memory for the app session
-// (the web used localStorage); the view endpoint records one idempotent view per display.
-import { useEffect, useState } from "react";
-import { View } from "react-native";
+// for this store's tier. Dismissals ("Got it") are saved on the device with SecureStore, per
+// store, so an announcement never comes back after a relaunch or a new sign-in. The view
+// endpoint records one idempotent view per display.
+import { useEffect, useRef, useState } from "react";
+import { Platform, View } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "../../context/AuthContext";
 import { listAnnouncements, markAnnouncementViewed, isEveryTier, type Announcement } from "../../lib/announcements";
 import { ago, titleCase } from "../../lib/format";
 import { Button, Pill, Skeleton, T } from "../ui";
 import { C, R, shadow } from "../../theme";
 
-const seenIds = new Set<string>();
+const storageKey = (storeId: string) => `brikoh_seen_announcements_${storeId.replace(/[^A-Za-z0-9._-]/g, "_")}`;
+
+// SecureStore doesn't exist on web, so fall back to localStorage there.
+const store = {
+  get: async (k: string): Promise<string | null> =>
+    Platform.OS === "web" ? globalThis.localStorage?.getItem(k) ?? null : SecureStore.getItemAsync(k),
+  set: async (k: string, v: string): Promise<void> => {
+    if (Platform.OS === "web") globalThis.localStorage?.setItem(k, v);
+    else await SecureStore.setItemAsync(k, v);
+  },
+};
+
+async function loadSeen(key: string): Promise<string[]> {
+  try {
+    const raw = await store.get(key);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch (e) {
+    console.warn("[announcements] couldn't read dismissed list", e);
+    return [];
+  }
+}
+
+async function saveSeen(key: string, ids: Set<string>) {
+  try {
+    await store.set(key, JSON.stringify([...ids]));
+  } catch (e) {
+    console.warn("[announcements] couldn't save dismissed list", e);
+  }
+}
 
 const tierLabel = (tier: string) => (isEveryTier(tier) ? "Everyone" : titleCase(tier));
 
 export default function AnnouncementsBanner() {
+  const { me } = useAuth();
+  const key = storageKey(String(me?.store?.id ?? "device"));
+  const seenIds = useRef<Set<string>>(new Set());
   const [items, setItems] = useState<Announcement[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -22,9 +57,10 @@ export default function AnnouncementsBanner() {
     let alive = true;
     (async () => {
       try {
-        const list = await listAnnouncements();
+        const [list, saved] = await Promise.all([listAnnouncements(), loadSeen(key)]);
         if (!alive) return;
-        setItems(list.items.filter((a) => !seenIds.has(a.id)));
+        seenIds.current = new Set(saved);
+        setItems(list.items.filter((a) => !seenIds.current.has(a.id)));
         setIndex(0);
       } catch {
         if (alive) setItems([]); // non-critical: never break the dashboard
@@ -35,7 +71,7 @@ export default function AnnouncementsBanner() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [key]);
 
   const current = items[index];
 
@@ -83,7 +119,8 @@ export default function AnnouncementsBanner() {
           variant="ghost"
           small
           onPress={() => {
-            seenIds.add(current.id);
+            seenIds.current.add(current.id);
+            saveSeen(key, seenIds.current);
             setIndex((i) => i + 1);
           }}
         />
