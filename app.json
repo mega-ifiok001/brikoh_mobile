@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Brikoh",
+    "slug": "brikoh",
+    "scheme": "brikoh",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#fbf9f5",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A100D"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.brikoh.app"
+    },
+    "android": {
+      "package": "com.brikoh.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A100D",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      "expo-splash-screen",
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "08f313f7-4b55-4739-afc4-5a35b4885633"
+      }
+    },
+    "owner": "aniebiet001"
+  }
+}
