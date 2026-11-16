@@ -35,7 +35,8 @@
       "expo-secure-store",
       "expo-font",
       "expo-splash-screen",
-      "expo-status-bar"
+      "expo-status-bar",
+       ["expo-notifications", { "icon": "./assets/android-icon-monochrome.png", "color": "#ec6405" }]
     ],
     "experiments": {
       "typedRoutes": false

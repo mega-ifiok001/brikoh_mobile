@@ -11,6 +11,7 @@ import { ThemeBoundary, ThemeProvider, useTheme } from "../src/context/ThemeCont
 import { ToastHost } from "../src/components/ui";
 import { BrandSplash } from "../src/components/Loader";
 import { C, themeSwitch } from "../src/theme";
+import { usePushNotifications } from "../src/lib/notifications";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -21,6 +22,7 @@ function Gate() {
   const { resolved } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
+    usePushNotifications(isAuthed && isOnboarded);
   // After a theme switch the tree re-mounts: skip the launch animation and go back to where the user was.
   const [minDone, setMinDone] = useState(themeSwitch.pending);
 
