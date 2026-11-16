@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,6 +27,25 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Hide/show amounts (remembered between app launches)
+  const [hideAmounts, setHideAmounts] = useState(false);
+
+  useEffect(() => {
+    SecureStore.getItemAsync("brikoh_hide_amounts")
+      .then((v) => setHideAmounts(v === "1"))
+      .catch(() => {});
+  }, []);
+
+  const toggleAmounts = useCallback(() => {
+    setHideAmounts((prev) => {
+      const next = !prev;
+      SecureStore.setItemAsync("brikoh_hide_amounts", next ? "1" : "0").catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const MASK = "₦ ••••••";
 
   // Restock straight from the low-stock list: stock only ever moves through the
   // stock-adjustment endpoint, so we need the full product + the branch list.
@@ -157,18 +177,39 @@ export default function Home() {
               style={{ marginHorizontal: 16, marginTop: 16, borderRadius: 24, padding: 18, overflow: "hidden" }}
             >
               <View style={{ position: "absolute", right: -40, top: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: "rgba(236,100,5,0.28)" }} />
-              <T w="bold" size={12} color={C.nightMuted}>
-                Revenue · last 30 days
-              </T>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <T w="bold" size={12} color={C.nightMuted}>
+                  Revenue · last 30 days
+                </T>
+                {canViewProfit && (
+                  <Pressable
+                    onPress={toggleAmounts}
+                    hitSlop={12}
+                    style={({ pressed }) => ({
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      backgroundColor: "rgba(255,255,255,0.12)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      opacity: pressed ? 0.7 : 1,
+                    })}
+                  >
+                    <Ionicons name={hideAmounts ? "eye-off-outline" : "eye-outline"} size={17} color="#fff" />
+                  </Pressable>
+                )}
+              </View>
               <T w="display" size={34} color="#fff" style={{ marginTop: 4, letterSpacing: -0.8 }}>
-                {canViewProfit ? fm(kpis.revenue, currency) : "Hidden"}
+                {canViewProfit ? (hideAmounts ? MASK : fm(kpis.revenue, currency)) : "Hidden"}
               </T>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 }}>
                 <T w="semi" size={12.5} color={C.nightMuted}>
                   {canViewProfit
-                    ? kpis.avgOrderValue
-                      ? `Avg order ${fm(kpis.avgOrderValue, currency, { compact: true })}`
-                      : "Avg order —"
+                    ? hideAmounts
+                      ? "Avg order ••••"
+                      : kpis.avgOrderValue
+                        ? `Avg order ${fm(kpis.avgOrderValue, currency, { compact: true })}`
+                        : "Avg order —"
                     : "Ask an owner for access"}
                 </T>
               </View>
@@ -185,7 +226,7 @@ export default function Home() {
             <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 16, marginTop: 12 }}>
               <Kpi label="Orders" value={String(kpis.orders ?? "—")} />
               <Kpi label="Low stock" value={String(lowStock.length)} tone={lowStock.length ? "gold" : undefined} />
-              <Kpi label="Credit owed" value={fm(quick.creditOwing ?? 0, currency, { compact: true })} tone={rawNum(quick.creditOwing) > 0 ? "gold" : undefined} />
+              <Kpi label="Credit owed" value={hideAmounts ? "••••" : fm(quick.creditOwing ?? 0, currency, { compact: true })} tone={rawNum(quick.creditOwing) > 0 ? "gold" : undefined} />
             </View>
             {walletBalance !== undefined && access.can("wallet") && (
               <Card onPress={() => router.push("/wallet")} style={{ marginHorizontal: 16, marginTop: 10, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}>
@@ -196,7 +237,13 @@ export default function Home() {
                   <T w="semi" size={12} color={C.ink400}>
                     Wallet · online sales land here
                   </T>
-                  <Money v={walletBalance} currency="NGN" size={17} />
+                  {hideAmounts ? (
+                    <T w="extra" size={17}>
+                      ₦ ••••••
+                    </T>
+                  ) : (
+                    <Money v={walletBalance} currency="NGN" size={17} />
+                  )}
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={C.ink300} />
               </Card>
