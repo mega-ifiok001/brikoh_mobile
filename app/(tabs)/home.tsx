@@ -9,9 +9,10 @@ import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
 import { getAccess } from "../../src/lib/access";
 import { ago, apiErrorMessage, asList, fm, pick, plural, rawNum, titleCase } from "../../src/lib/format";
-import { Avatar, Card, ErrorState, IconButton, Money, Pill, Skeleton, StatusPill, T, toast } from "../../src/components/ui";
+import { Button, Avatar, Card, ErrorState, IconButton, Money, Pill, Skeleton, StatusPill, T, toast } from "../../src/components/ui";
 import StockAdjustSheet from "../../src/components/stock/StockAdjustSheet";
 import AnnouncementsBanner from "../../src/components/announcements/AnnouncementsBanner";
+import GetStartedCard from "../../src/components/GetStartedCard";
 import { C } from "../../src/theme";
 
 export default function Home() {
@@ -249,13 +250,18 @@ export default function Home() {
               </Card>
             )}
 
+                        <GetStartedCard hasSale={recent.length > 0} />
+
             {/* Recent orders */}
             <SectionHead title="Recent orders" action="See all" onAction={() => router.push("/orders")} />
             <Card style={{ marginHorizontal: 16, paddingHorizontal: 14 }}>
               {recent.length === 0 ? (
-                <T w="semi" size={13} color={C.ink400} style={{ paddingVertical: 22, textAlign: "center" }}>
-                  No orders yet — make your first sale!
-                </T>
+                               <View style={{ paddingVertical: 20, alignItems: "center", gap: 10 }}>
+                  <T w="semi" size={13} color={C.ink400} style={{ textAlign: "center" }}>
+                    No orders yet. Make your first sale!
+                  </T>
+                  {access.can("pos") && <Button label="Make a sale" icon="cart" small onPress={() => router.push("/sell")} />}
+                </View>
               ) : (
                 recent.slice(0, 5).map((o, i) => (
                   <View

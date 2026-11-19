@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { View } from "react-native";
 import { Stack, usePathname, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -12,10 +13,14 @@ import { ToastHost } from "../src/components/ui";
 import { BrandSplash } from "../src/components/Loader";
 import { C, themeSwitch } from "../src/theme";
 import { usePushNotifications } from "../src/lib/notifications";
+import { hasLaunchedBefore, markLaunched } from "../src/lib/launch";
+import OfflineBanner from "../src/components/OfflineBanner";
+import AppLock from "../src/components/AppLock";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const MIN_SPLASH_MS = 3200; // long enough for the logo to roll in and the name to be typed out
+const MIN_SPLASH_MS = 3200; // first launch only: long enough for the logo to roll in and the name to be typed out
+const RETURNING_SPLASH_MS = 1200; // every launch after that
 
 function Gate() {
   const { loading, isAuthed, isOnboarded } = useAuth();
@@ -35,8 +40,17 @@ function Gate() {
       }, 60);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setMinDone(true), MIN_SPLASH_MS);
-    return () => clearTimeout(t);
+      let alive = true;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    hasLaunchedBefore().then((seen) => {
+      if (!alive) return;
+      t = setTimeout(() => setMinDone(true), seen ? RETURNING_SPLASH_MS : MIN_SPLASH_MS);
+      markLaunched();
+    });
+    return () => {
+      alive = false;
+      if (t) clearTimeout(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -59,6 +73,9 @@ function Gate() {
   return (
     <>
       <StatusBar style={lightIcons ? "light" : "dark"} />
+            <View style={{ flex: 1 }}>
+        <OfflineBanner />
+        <View style={{ flex: 1 }}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.cream50 }, animation: "slide_from_right" }}>
         <Stack.Screen name="index" options={{ animation: "fade" }} />
         <Stack.Protected guard={isAuthed && isOnboarded}>
@@ -75,6 +92,10 @@ function Gate() {
           <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
         </Stack.Protected>
       </Stack>
+              </View>
+        <AppLock active={isAuthed && isOnboarded} />
+      </View>
+      
     </>
   );
 }

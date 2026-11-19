@@ -69,7 +69,7 @@ function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; n
                 <Ionicons name="cart" size={25} color="#fff" />
                 {highlight && <TourRing circle />}
               </View>
-              <T w="bold" size={10.5} color={focused ? C.brand : C.ink300} style={{ marginTop: 3 }}>
+              <T w="bold" size={11.5} color={focused ? C.brand : C.ink400} style={{ marginTop: 3 }}>
                 Sell
               </T>
             </Pressable>
@@ -80,7 +80,7 @@ function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; n
           <Pressable key={route.key} onPress={onPress} style={{ flex: 1, alignItems: "center", gap: 3, paddingTop: 2, opacity: dim ? 0.4 : 1 }} accessibilityLabel={meta.label}>
             {highlight && <TourRing />}
             <Ionicons name={focused ? meta.iconOn : meta.icon} size={23} color={focused ? C.brand : C.ink300} />
-            <T w="bold" size={10.5} color={focused ? C.brand : C.ink300}>
+            <T w="bold" size={11.5} color={focused ? C.brand : C.ink400}>
               {meta.label}
             </T>
           </Pressable>

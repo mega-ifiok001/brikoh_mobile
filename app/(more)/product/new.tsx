@@ -9,6 +9,7 @@ import { api } from "../../../src/lib/api";
 import { asList, pick } from "../../../src/lib/format";
 import { Button, Card, Field, Input, T, toast } from "../../../src/components/ui";
 import { Page, SelectField } from "../../../src/components/kit";
+import { prepareImage, uploadFormWithProgress } from "../../../src/lib/images";
 import { C } from "../../../src/theme";
 import { MAX_OPTIONS, MAX_OPTION_NAME, MAX_VARIANTS, parseValues } from "../../../src/components/stock/ProductVariantsSection";
 
@@ -73,6 +74,7 @@ export default function NewProductScreen() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
+    const [uploadPct, setUploadPct] = useState(0);
   const [uploadedImageUrl, setUploadedImageUrl] = useState("");
   const [imagePreviewUri, setImagePreviewUri] = useState("");
 
@@ -93,7 +95,7 @@ export default function NewProductScreen() {
     .filter((option) => option.name || option.values.length), [options]);
   const variantCount = cleanOptions.length ? cleanOptions.reduce((total, option) => total * Math.max(option.values.length, 1), 1) : 0;
 
-  const chooseProductImage = async () => {
+   const chooseProductImage = async () => {
     setError("");
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -105,96 +107,58 @@ export default function NewProductScreen() {
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.85,
+      quality: 1, // we compress once below instead of twice
     });
     if (result.canceled || !result.assets?.[0]) return;
 
     const asset = result.assets[0];
-    const contentType = asset.mimeType || "image/jpeg";
-    if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+    const pickedType = asset.mimeType || "image/jpeg";
+    if (!["image/jpeg", "image/png", "image/webp"].includes(pickedType)) {
       setError("Choose a JPEG, PNG or WebP image.");
       return;
     }
 
     setImageBusy(true);
+    setUploadPct(0);
     setImagePreviewUri(asset.uri);
     setUploadedImageUrl("");
     try {
-    
-// 1. Request Cloudinary signing details from Brikoh backend
-const response: any = await api.post(
-  "/api/dashboard/uploads/presign-product-image",
-  {
-    fileName:
-      asset.fileName ||
-      `product-${Date.now()}.${contentType.split("/")[1] || "jpg"}`,
-    contentType,
-    declaredSizeBytes: asset.fileSize ?? 0,
-  }
-);
+      // Shrink first: much less mobile data and a faster upload on a weak connection.
+      const img = await prepareImage(asset);
+      const fileName = `product-${Date.now()}.${img.contentType === "image/png" ? "png" : img.contentType === "image/webp" ? "webp" : "jpg"}`;
 
-// Handle either a direct response or a wrapped response
-const signedData =
-  response?.data?.data ??
-  response?.data ??
-  response;
+      // 1. Ask the Brikoh backend for signed Cloudinary upload details
+      const response: any = await api.post("/api/dashboard/uploads/presign-product-image", {
+        fileName,
+        contentType: img.contentType,
+        declaredSizeBytes: img.sizeBytes,
+      });
+      const signedData = response?.data?.data ?? response?.data ?? response;
+      if (!signedData?.cloudName || !signedData?.apiKey || !signedData?.timestamp || !signedData?.signature || !signedData?.folder || !signedData?.publicId) {
+        console.log("Cloudinary signing response:", response);
+        throw new Error("The server returned incomplete image upload details.");
+      }
 
-if (
-  !signedData?.cloudName ||
-  !signedData?.apiKey ||
-  !signedData?.timestamp ||
-  !signedData?.signature ||
-  !signedData?.folder ||
-  !signedData?.publicId
-) {
-  console.log("Cloudinary signing response:", response);
-  throw new Error("The server returned incomplete image upload details.");
-}
+      // 2. Build the upload
+      const formData = new FormData();
+      formData.append("api_key", String(signedData.apiKey));
+      formData.append("timestamp", String(signedData.timestamp));
+      formData.append("signature", signedData.signature);
+      formData.append("folder", signedData.folder);
+      formData.append("public_id", signedData.publicId);
+      if (Platform.OS === "web") {
+        const blob = await (await fetch(img.uri)).blob();
+        formData.append("file", blob, fileName);
+      } else {
+        formData.append("file", { uri: img.uri, name: fileName, type: img.contentType } as any);
+      }
 
-// 2. Prepare Cloudinary upload
-const formData = new FormData();
+      // 3. Upload directly to Cloudinary, with progress
+      const uploaded = await uploadFormWithProgress(`https://api.cloudinary.com/v1_1/${signedData.cloudName}/image/upload`, formData, setUploadPct);
+      if (!uploaded?.secure_url) throw new Error("Cloudinary image upload failed.");
 
-formData.append("api_key", String(signedData.apiKey));
-formData.append("timestamp", String(signedData.timestamp));
-formData.append("signature", signedData.signature);
-formData.append("folder", signedData.folder);
-formData.append("public_id", signedData.publicId);
-
-// Handle browser and native uploads
-if (Platform.OS === "web") {
-  const fileResponse = await fetch(asset.uri);
-  const imageBlob = await fileResponse.blob();
-
-  formData.append("file", imageBlob, asset.fileName || "product.jpg");
-} else {
-  formData.append("file", {
-    uri: asset.uri,
-    name: asset.fileName || "product.jpg",
-    type: contentType,
-  } as any);
-}
-
-// 3. Upload directly to Cloudinary
-const cloudinaryResponse = await fetch(
-  `https://api.cloudinary.com/v1_1/${signedData.cloudName}/image/upload`,
-  {
-    method: "POST",
-    body: formData,
-  }
-);
-
-const cloudinaryResult = await cloudinaryResponse.json();
-
-if (!cloudinaryResponse.ok) {
-  console.error("Cloudinary upload error:", cloudinaryResult);
-  throw new Error(
-    cloudinaryResult?.error?.message || "Cloudinary image upload failed."
-  );
-}
-
-// 4. Save uploaded image URL
-setUploadedImageUrl(cloudinaryResult.secure_url);
-
+      // 4. Save the uploaded image URL
+      setUploadedImageUrl(uploaded.secure_url);
     } catch (e: any) {
       setImagePreviewUri("");
       setUploadedImageUrl("");
@@ -445,12 +409,12 @@ setUploadedImageUrl(cloudinaryResult.secure_url);
                         <Button small variant="outline" label="Change photo" icon="image" disabled={imageBusy} onPress={chooseProductImage} />
                         <Button small variant="ghost" label="Remove" icon="trash-outline" disabled={imageBusy} onPress={removeProductImage} />
                       </View>
-                      {imageBusy ? <T size={11} color={C.brand}>Uploading photo…</T> : uploadedImageUrl ? <T size={11} color={C.leaf500}>Photo uploaded</T> : null}
+                      {imageBusy ? <T size={11} color={C.brand}>{uploadPct > 0 ? `Uploading photo… ${uploadPct}%` : "Preparing photo…"}</T> : uploadedImageUrl ? <T size={11} color={C.leaf500}>Photo uploaded</T> : null}
                     </View>
                   ) : (
                     <Pressable onPress={chooseProductImage} disabled={imageBusy} style={{ minHeight: 116, borderWidth: 1.5, borderStyle: "dashed", borderColor: C.cream300, borderRadius: 16, alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: C.cream50, opacity: imageBusy ? 0.6 : 1 }}>
                       <Ionicons name="cloud-upload-outline" size={26} color={C.brand} />
-                      <T w="bold" size={12} color={C.brand}>{imageBusy ? "Uploading photo…" : "Choose photo from device"}</T>
+                      <T w="bold" size={12} color={C.brand}>{imageBusy ? (uploadPct > 0 ? `Uploading photo… ${uploadPct}%` : "Preparing photo…") : "Choose photo from device"}</T>
                       <T size={10.5} color={C.ink400}>Tap to open your gallery</T>
                     </Pressable>
                   )}

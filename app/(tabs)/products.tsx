@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
 import { apiErrorMessage, asList, rawNum } from "../../src/lib/format";
-import { Card, Chip, EmptyState, ErrorState, LargeTitle, ListSkeleton, Money, Pill, SearchBar, StatusPill, T } from "../../src/components/ui";
+import { Button, Card, Chip, EmptyState, ErrorState, LargeTitle, ListSkeleton, Money, Pill, SearchBar, StatusPill, T } from "../../src/components/ui";
 import { AddButton } from "../../src/components/kit";
 import { getAccess } from "../../src/lib/access";
 import { C } from "../../src/theme";
@@ -111,8 +111,12 @@ export default function Products() {
           onEndReached={() => {
             if (next && !more && !loading) load(next);
           }}
-          ListEmptyComponent={<EmptyState icon="cube-outline" title="No products here" sub={q || filter !== "all" ? "Try a different search or filter." : "Tap + to add your first product."} />}
-          ListFooterComponent={more ? <ActivityIndicator color={C.brand} style={{ marginVertical: 14 }} /> : undefined}
+          ListEmptyComponent={<EmptyState
+              icon="cube-outline"
+              title="No products here"
+              sub={q || filter !== "all" ? "Try a different search or filter." : "Add your first product to start selling."}
+              action={!q && filter === "all" && canManage ? <Button label="Add a product" icon="add" small onPress={() => router.push("/product/new")} /> : undefined}
+            />}
           renderItem={({ item: p }) => {
             const stock = stockOf(p);
             const img = p.coverImageUrl || p.images?.[0];

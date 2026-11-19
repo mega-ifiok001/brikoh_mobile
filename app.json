@@ -29,6 +29,12 @@
       "expo-secure-store",
       "expo-font",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Brikoh to use Face ID to unlock the app."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
@@ -44,7 +50,14 @@
           "photosPermission": "Allow Brikoh to access your photos so you can add product images."
         }
       ],
-      ["expo-notifications", { "icon": "./assets/android-icon-monochrome.png", "color": "#ec6405" }]
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#ec6405"
+        }
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": false

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Linking, Pressable, ScrollView, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
 import { useTheme, type ThemePref } from "../../src/context/ThemeContext";
-import { Segmented } from "../../src/components/kit";
+import { ConfirmSheet, Segmented, SwitchRow } from "../../src/components/kit";
+import { setAppLockEnabled, useAppLockState } from "../../src/lib/appLock";
 import { api } from "../../src/lib/api";
 import { getAccess, type Feature } from "../../src/lib/access";
 import { ago, fd, titleCase } from "../../src/lib/format";
@@ -83,8 +84,11 @@ function alertText(n: any): string {
 
 export default function More() {
   const { me, logout } = useAuth();
-    const { pref, setPref } = useTheme();
-      const tour = useTour();
+  const { pref, setPref } = useTheme();
+  const tour = useTour();
+  const lock = useAppLockState();
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
   const access = getAccess(me);
   const store = me.store || {};
@@ -133,7 +137,7 @@ export default function More() {
         </Card>
 
         {store.subdomain ? (
-          
+
           <Card onPress={() => Linking.openURL(`https://${store.subdomain}.brikoh.com`)} style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 12, marginTop: 2 }}>
             <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: C.solid, alignItems: "center", justifyContent: "center" }}>
               <Ionicons name="globe-outline" size={19} color={C.onSolid} />
@@ -208,7 +212,7 @@ export default function More() {
             </Card>
           </View>
         ))}
-                <View style={{ gap: 8 }}>
+        <View style={{ gap: 8 }}>
           <SectionLabel>Help</SectionLabel>
           <Card onPress={tour.start} style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}>
             <Ionicons name="compass-outline" size={20} color={C.brand} />
@@ -223,6 +227,22 @@ export default function More() {
             <Ionicons name="chevron-forward" size={18} color={C.ink300} />
           </Card>
         </View>
+                {Platform.OS !== "web" && (
+          <View style={{ gap: 8 }}>
+            <SectionLabel>Security</SectionLabel>
+            <Card style={{ paddingHorizontal: 14 }}>
+              <SwitchRow
+                label="App lock"
+                sub="Ask for Face ID, fingerprint or your phone passcode when Brikoh opens"
+                value={lock.enabled}
+                onChange={async (on) => {
+                  const r = await setAppLockEnabled(on);
+                  if (!r.ok && r.message) toast.error(r.message);
+                }}
+              />
+            </Card>
+          </View>
+        )}
         <View style={{ gap: 8 }}>
           <SectionLabel>Appearance</SectionLabel>
           <Card style={{ padding: 10 }}>
@@ -238,10 +258,7 @@ export default function More() {
           </Card>
         </View>
         <Card
-          onPress={async () => {
-            await logout();
-            toast.info("Signed out. See you soon.");
-          }}
+                    onPress={() => setSignOutOpen(true)}
           style={{ marginTop: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}
         >
           <Ionicons name="log-out-outline" size={20} color={C.danger500} />
@@ -253,6 +270,20 @@ export default function More() {
           Brikoh · all-in-one commerce for your store
         </T>
       </ScrollView>
+            <ConfirmSheet
+        open={signOutOpen}
+        title="Sign out?"
+        message="You'll need your email and password to sign back in."
+        confirmLabel="Sign out"
+        danger
+        busy={signingOut}
+        onClose={() => setSignOutOpen(false)}
+        onConfirm={async () => {
+          setSigningOut(true);
+          await logout();
+          toast.info("Signed out. See you soon.");
+        }}
+      />
     </SafeAreaView>
   );
 }

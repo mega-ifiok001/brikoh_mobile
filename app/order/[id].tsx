@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
 import { apiErrorMessage, fd, fdt, fm, rawNum, titleCase } from "../../src/lib/format";
+import { shareReceiptPdf, shareReceiptText, type ReceiptData } from "../../src/lib/receipt";
 import { Button, Card, ErrorState, Money, Skeleton, StatusPill, T, toast } from "../../src/components/ui";
 import { C } from "../../src/theme";
 
@@ -20,6 +21,7 @@ export default function OrderDetail() {
   const [repayments, setRepayments] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"confirm" | "reject" | null>(null);
+    const [shareBusy, setShareBusy] = useState<"text" | "pdf" | null>(null);
 
   const apply = (res: any) => {
     setOrder(res?.order ?? null);
@@ -68,6 +70,34 @@ export default function OrderDetail() {
       toast.error(apiErrorMessage(e, "Couldn't reject the payment.", { ORDER_NOT_AWAITING_PAYMENT: "This order is no longer awaiting payment." }));
     } finally {
       setBusy(null);
+    }
+  };
+
+    const shareReceipt = async (kind: "text" | "pdf") => {
+    if (!order) return;
+    const data: ReceiptData = {
+      storeName: me.store?.name || "Brikoh store",
+      number: order.orderNumber || String(order.id || "").slice(0, 8).toUpperCase(),
+      date: order.createdAt,
+      currency,
+      lines: lines.map((li) => ({
+        name: li.variantName ? `${li.productName} · ${li.variantName}` : li.productName,
+        qty: rawNum(li.quantity),
+        unit: rawNum(li.unitPriceAtPurchase),
+        total: rawNum(li.lineTotal),
+      })),
+      total: rawNum(order.total),
+      method: order.paymentMethod,
+      outstanding: rawNum(order.balanceDue ?? 0),
+    };
+    setShareBusy(kind);
+    try {
+      if (kind === "text") await shareReceiptText(data);
+      else await shareReceiptPdf(data);
+    } catch (e: any) {
+      toast.error(e?.message || "Couldn't share the receipt.");
+    } finally {
+      setShareBusy(null);
     }
   };
 
@@ -173,6 +203,13 @@ export default function OrderDetail() {
                 ))
               )}
             </Card>
+
+                        {!awaiting && order.status !== "CANCELLED" && order.status !== "FAILED" && (
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Button label="Send receipt" icon="share-outline" variant="outline" small busy={shareBusy === "text"} disabled={!!shareBusy} onPress={() => shareReceipt("text")} style={{ flex: 1 }} />
+                <Button label="PDF receipt" icon="document-text-outline" variant="outline" small busy={shareBusy === "pdf"} disabled={!!shareBusy} onPress={() => shareReceipt("pdf")} style={{ flex: 1 }} />
+              </View>
+            )}
 
             {/* Bank transfer claim */}
             {order.bankDetails && (

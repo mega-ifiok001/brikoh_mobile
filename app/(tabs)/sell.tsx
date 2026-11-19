@@ -1,24 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, View } from "react-native";
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
-import { asList, fm, rawNum } from "../../src/lib/format";
+import { getAccess } from "../../src/lib/access";
+import { addRecentIds, loadHeld, loadRecentIds, saveHeld, type CartLine, type HeldCart } from "../../src/lib/sellLocal";
+import { shareReceiptPdf, shareReceiptText, type ReceiptData } from "../../src/lib/receipt";
+import { ago, asList, fm, rawNum } from "../../src/lib/format";
 import { Button, Chip, EmptyState, Input, LargeTitle, ListSkeleton, Money, Pill, SearchBar, Sheet, T, tap, toast } from "../../src/components/ui";
+import { UndoStrip, useUndo } from "../../src/components/UndoStrip";
 import { C, R, shadow } from "../../src/theme";
 
-interface Line {
-  key: string;
-  productId: string;
-  variantId?: string;
-  name: string;
-  variantName?: string;
-  price: number;
-  qty: number;
-  max: number;
-}
+type Line = CartLine;
 
 const METHODS = [
   { id: "CASH", label: "Cash", icon: "cash-outline" },
@@ -42,9 +38,15 @@ function posErrorMessage(e: any): string {
   return map[code] || e?.message || "Couldn't record the sale.";
 }
 
+const stockOf = (p: any) => (p.variants?.length ? p.variants.reduce((a: number, v: any) => a + rawNum(v.quantity), 0) : rawNum(p.quantity));
+const effPrice = (p: any) => rawNum(p.discountPrice ?? p.price ?? 0);
+
 export default function Sell() {
   const { me } = useAuth();
+  const router = useRouter();
+  const access = getAccess(me);
   const store = me.store || {};
+  const storeId = String(store.id ?? "device");
   const currency: string = store.currency || "NGN";
 
   const [products, setProducts] = useState<any[]>([]);
@@ -65,7 +67,24 @@ export default function Sell() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [receipt, setReceipt] = useState<any | null>(null);
+  const [receipt, setReceipt] = useState<(ReceiptData & { change: number; redirectUrl: string | null }) | null>(null);
+  const [shareBusy, setShareBusy] = useState<"text" | "pdf" | null>(null);
+
+  // On-device extras: recently sold products + held (parked) sales.
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [held, setHeld] = useState<HeldCart[]>([]);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const undo = useUndo();
+
+  useEffect(() => {
+    loadRecentIds(storeId).then(setRecentIds);
+    loadHeld(storeId).then(setHeld);
+  }, [storeId]);
+
+  const persistHeld = (next: HeldCart[]) => {
+    setHeld(next);
+    saveHeld(storeId, next);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,8 +119,11 @@ export default function Sell() {
     });
   }, [products, q, catF]);
 
-  const effPrice = (p: any) => rawNum(p.discountPrice ?? p.price ?? 0);
-  const stockOf = (p: any) => (p.variants?.length ? p.variants.reduce((a: number, v: any) => a + rawNum(v.quantity), 0) : rawNum(p.quantity));
+  const recent = useMemo(
+    () => recentIds.map((id) => products.find((p) => p.id === id)).filter((p) => p && stockOf(p) > 0) as any[],
+    [recentIds, products]
+  );
+
   const inCart = (p: any) => lines.filter((l) => l.productId === p.id).reduce((a, l) => a + l.qty, 0);
 
   const addToCart = (p: any) => {
@@ -138,8 +160,71 @@ export default function Sell() {
     setVariantPick(null);
   };
 
-  const bump = (key: string, d: number) =>
-    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, qty: Math.min(l.max, Math.max(0, l.qty + d)) } : l)).filter((l) => l.qty > 0));
+  // Changing a quantity. Taking the last one off removes the line, with an Undo.
+  const bump = (key: string, d: number) => {
+    const cur = lines.find((l) => l.key === key);
+    if (!cur) return;
+    const qty = Math.min(cur.max, Math.max(0, cur.qty + d));
+    if (qty === 0) {
+      setLines((ls) => ls.filter((l) => l.key !== key));
+      undo.offer(`${cur.name} removed`, () => setLines((ls) => (ls.some((l) => l.key === cur.key) ? ls : [...ls, cur])));
+      return;
+    }
+    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, qty } : l)));
+  };
+
+  const clearCart = () => {
+    if (!lines.length) return;
+    const prev = lines;
+    setLines([]);
+    setCartOpen(false);
+    undo.offer("Cart cleared", () => setLines(prev));
+  };
+
+  // Park the current sale so you can serve someone else, then pick it up again from "Held".
+  const holdSale = () => {
+    if (!lines.length) return;
+    persistHeld([{ id: String(Date.now()), savedAt: new Date().toISOString(), lines }, ...held]);
+    setLines([]);
+    setAmountPaid("");
+    setCode("");
+    setCartOpen(false);
+    toast.success("Sale held. Find it under Held at the top.");
+  };
+
+  const resumeSale = (cart: HeldCart) => {
+    let changed = false;
+    const fresh: Line[] = [];
+    for (const l of cart.lines) {
+      const p = products.find((x) => x.id === l.productId);
+      const v = l.variantId ? p?.variants?.find((x: any) => x.id === l.variantId) : null;
+      if (!p || (l.variantId && !v)) {
+        changed = true;
+        continue;
+      }
+      const max = rawNum(v ? v.quantity : p.quantity);
+      if (max <= 0) {
+        changed = true;
+        continue;
+      }
+      const qty = Math.min(l.qty, max);
+      const price = v ? rawNum(v.sellingPrice ?? p.discountPrice ?? p.price) : effPrice(p);
+      if (qty !== l.qty || price !== l.price) changed = true;
+      fresh.push({ ...l, qty, max, price });
+    }
+    const rest = held.filter((h) => h.id !== cart.id);
+    // If there's already a sale in progress, park it instead of losing it.
+    persistHeld(lines.length ? [{ id: String(Date.now()), savedAt: new Date().toISOString(), lines }, ...rest] : rest);
+    setLines(fresh);
+    setHeldOpen(false);
+    if (!fresh.length) toast.error("None of those items are available any more.");
+    else if (changed) toast.info("Some items changed since you held this sale. Check the cart.");
+  };
+
+  const deleteHeld = (cart: HeldCart) => {
+    persistHeld(held.filter((h) => h.id !== cart.id));
+    undo.offer("Held sale deleted", () => persistHeld([cart, ...held.filter((h) => h.id !== cart.id)]));
+  };
 
   const subtotal = lines.reduce((a, l) => a + l.price * l.qty, 0);
   const itemCount = lines.reduce((a, l) => a + l.qty, 0);
@@ -175,15 +260,21 @@ export default function Sell() {
       const payment = res?.payment ?? null;
       const total = rawNum(order.total ?? subtotal);
 
+      const sold = lines;
       setCartOpen(false);
       setReceipt({
+        storeName: store.name || "Brikoh store",
         number: order.orderNumber || (order.id ? String(order.id).slice(0, 8).toUpperCase() : "—"),
+        date: new Date().toISOString(),
+        currency,
+        lines: sold.map((l) => ({ name: l.variantName ? `${l.name} · ${l.variantName}` : l.name, qty: l.qty, unit: l.price, total: l.price * l.qty })),
         total,
         method,
         change: method === "CASH" && amountPaid ? Math.max(0, paidNow - total) : 0,
         outstanding: rawNum(order.balanceDue ?? 0),
         redirectUrl: payment?.redirectUrl ?? null,
       });
+      addRecentIds(storeId, sold.map((l) => l.productId)).then(setRecentIds);
       setLines([]);
       setEmail("");
       setCode("");
@@ -199,23 +290,55 @@ export default function Sell() {
     }
   };
 
+  const share = async (kind: "text" | "pdf") => {
+    if (!receipt) return;
+    setShareBusy(kind);
+    try {
+      if (kind === "text") await shareReceiptText(receipt);
+      else await shareReceiptPdf(receipt);
+    } catch (e: any) {
+      toast.error(e?.message || "Couldn't share the receipt.");
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
   const branchName = branches.find((b) => b.id === branchId)?.name || "Branch";
+  const heldTotal = (c: HeldCart) => c.lines.reduce((a, l) => a + l.price * l.qty, 0);
+  const heldCount = (c: HeldCart) => c.lines.reduce((a, l) => a + l.qty, 0);
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
       <LargeTitle
         title="Sell"
         right={
-          branches.length > 1 ? (
-            <Pressable
-              onPress={() => setBranchOpen(true)}
-              style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.brand50, paddingHorizontal: 12, paddingVertical: 8, borderRadius: R.pill }}
-            >
-              <T w="extra" size={12} color={C.brand}>
-                {branchName}
-              </T>
-              <Ionicons name="chevron-down" size={13} color={C.brand} />
-            </Pressable>
+          held.length > 0 || branches.length > 1 ? (
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {held.length > 0 && (
+                <Pressable
+                  onPress={() => setHeldOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Held sales, ${held.length}`}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.gold100, paddingHorizontal: 12, paddingVertical: 8, borderRadius: R.pill }}
+                >
+                  <Ionicons name="pause-circle-outline" size={14} color={C.gold600} />
+                  <T w="extra" size={12} color={C.gold600}>
+                    Held · {held.length}
+                  </T>
+                </Pressable>
+              )}
+              {branches.length > 1 && (
+                <Pressable
+                  onPress={() => setBranchOpen(true)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.brand50, paddingHorizontal: 12, paddingVertical: 8, borderRadius: R.pill }}
+                >
+                  <T w="extra" size={12} color={C.brand}>
+                    {branchName}
+                  </T>
+                  <Ionicons name="chevron-down" size={13} color={C.brand} />
+                </Pressable>
+              )}
+            </View>
           ) : null
         }
       />
@@ -228,6 +351,18 @@ export default function Sell() {
               <Chip key={c.id} label={c.name} on={catF === c.id} onPress={() => setCatF(catF === c.id ? "" : c.id)} />
             ))}
           </ScrollView>
+        )}
+        {recent.length > 0 && !q && !catF && (
+          <View style={{ gap: 6 }}>
+            <T w="extra" size={10.5} color={C.ink400} style={{ letterSpacing: 1.2, textTransform: "uppercase" }}>
+              Sold recently
+            </T>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }} keyboardShouldPersistTaps="handled">
+              {recent.map((p) => (
+                <Chip key={p.id} label={p.name} onPress={() => addToCart(p)} />
+              ))}
+            </ScrollView>
+          </View>
         )}
       </View>
 
@@ -246,7 +381,14 @@ export default function Sell() {
           refreshing={loading}
           onRefresh={load}
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={<EmptyState icon="cube-outline" title="Nothing on the shelf" sub={q ? "No products match your search." : "Add and publish products to start selling."} />}
+          ListEmptyComponent={
+            <EmptyState
+              icon="cube-outline"
+              title="Nothing on the shelf"
+              sub={q ? "No products match your search." : "Add and publish products to start selling."}
+              action={!q && access.can("products") ? <Button label="Add a product" icon="add" small onPress={() => router.push("/product/new")} /> : undefined}
+            />
+          }
           renderItem={({ item: p }) => {
             const stock = stockOf(p);
             const n = inCart(p);
@@ -289,6 +431,9 @@ export default function Sell() {
         />
       )}
 
+      {/* Undo strip (cart edits, held sales) — floats above the cart bar */}
+      <UndoStrip item={undo.item} onDone={undo.dismiss} style={{ position: "absolute", left: 12, right: 12, bottom: lines.length ? 82 : 14 }} />
+
       {/* Floating cart bar */}
       {lines.length > 0 && (
         <View
@@ -299,7 +444,7 @@ export default function Sell() {
             bottom: 10,
             height: 62,
             borderRadius: 22,
-           backgroundColor: C.night,
+            backgroundColor: C.night,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
@@ -358,29 +503,43 @@ export default function Sell() {
       >
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <ScrollView style={{ maxHeight: 440 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 14, paddingBottom: 6 }} keyboardShouldPersistTaps="handled">
-            <View style={{ backgroundColor: C.cream50, borderRadius: 16, paddingHorizontal: 12 }}>
-              {lines.map((l, i) => (
-                <View key={l.key} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: C.cream200 }}>
-                  <View style={{ flex: 1 }}>
-                    <T w="bold" size={13.5} numberOfLines={1}>
-                      {l.name}
-                      {l.variantName ? ` · ${l.variantName}` : ""}
-                    </T>
-                    <T w="regular" size={11.5} color={C.ink400}>
-                      {fm(l.price, currency)} each
-                    </T>
+            <UndoStrip item={undo.item} onDone={undo.dismiss} />
+            {lines.length === 0 ? (
+              <T w="semi" size={13} color={C.ink400} style={{ textAlign: "center", paddingVertical: 14 }}>
+                The cart is empty.
+              </T>
+            ) : (
+              <View style={{ backgroundColor: C.cream50, borderRadius: 16, paddingHorizontal: 12 }}>
+                {lines.map((l, i) => (
+                  <View key={l.key} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderTopColor: C.cream200 }}>
+                    <View style={{ flex: 1 }}>
+                      <T w="bold" size={13.5} numberOfLines={1}>
+                        {l.name}
+                        {l.variantName ? ` · ${l.variantName}` : ""}
+                      </T>
+                      <T w="regular" size={11.5} color={C.ink400}>
+                        {fm(l.price, currency)} each
+                      </T>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                      <StepBtn icon="remove" onPress={() => bump(l.key, -1)} />
+                      <T w="extra" size={14} style={{ minWidth: 26, textAlign: "center" }}>
+                        {l.qty}
+                      </T>
+                      <StepBtn icon="add" onPress={() => bump(l.key, 1)} disabled={l.qty >= l.max} />
+                    </View>
+                    <Money v={l.price * l.qty} currency={currency} size={13.5} />
                   </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
-                    <StepBtn icon="remove" onPress={() => bump(l.key, -1)} />
-                    <T w="extra" size={14} style={{ minWidth: 26, textAlign: "center" }}>
-                      {l.qty}
-                    </T>
-                    <StepBtn icon="add" onPress={() => bump(l.key, 1)} disabled={l.qty >= l.max} />
-                  </View>
-                  <Money v={l.price * l.qty} currency={currency} size={13.5} />
-                </View>
-              ))}
-            </View>
+                ))}
+              </View>
+            )}
+
+            {lines.length > 0 && (
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Button label="Hold sale" icon="pause-circle-outline" variant="outline" small onPress={holdSale} style={{ flex: 1 }} />
+                <Button label="Clear cart" icon="trash-outline" variant="danger" small onPress={clearCart} style={{ flex: 1 }} />
+              </View>
+            )}
 
             <View style={{ flexDirection: "row", gap: 8 }}>
               {METHODS.map((m) => {
@@ -395,7 +554,7 @@ export default function Sell() {
                     style={{ flex: 1, height: 62, borderRadius: 16, alignItems: "center", justifyContent: "center", gap: 4, backgroundColor: on ? C.solid : C.white, borderWidth: 1, borderColor: on ? C.solid : C.cream300 }}
                   >
                     <Ionicons name={m.icon as any} size={19} color={on ? C.onSolid : C.ink500} />
-                  <T w="bold" size={11.5} color={on ? C.onSolid : C.ink500}>
+                    <T w="bold" size={11.5} color={on ? C.onSolid : C.ink500}>
                       {m.label}
                     </T>
                   </Pressable>
@@ -415,6 +574,36 @@ export default function Sell() {
             <Input value={code} onChangeText={(t) => setCode(t.toUpperCase())} placeholder="Discount code (optional)" autoCapitalize="characters" />
           </ScrollView>
         </KeyboardAvoidingView>
+      </Sheet>
+
+      {/* Held sales */}
+      <Sheet open={heldOpen} onClose={() => setHeldOpen(false)} title="Held sales">
+        <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 8, paddingBottom: 10 }}>
+          <UndoStrip item={undo.item} onDone={undo.dismiss} />
+          {held.length === 0 ? (
+            <T w="semi" size={13} color={C.ink400} style={{ textAlign: "center", paddingVertical: 18 }}>
+              No held sales.
+            </T>
+          ) : (
+            held.map((h) => (
+              <View key={h.id} style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: C.cream200, backgroundColor: C.white }}>
+                <View style={{ flex: 1 }}>
+                  <T w="bold" size={14} numberOfLines={1}>
+                    {h.lines[0]?.name}
+                    {h.lines.length > 1 ? ` +${h.lines.length - 1} more` : ""}
+                  </T>
+                  <T w="regular" size={12} color={C.ink400}>
+                    {heldCount(h)} {heldCount(h) === 1 ? "item" : "items"} · {fm(heldTotal(h), currency)} · {ago(h.savedAt)}
+                  </T>
+                </View>
+                <Pressable onPress={() => deleteHeld(h)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Delete held sale">
+                  <Ionicons name="trash-outline" size={19} color={C.danger500} />
+                </Pressable>
+                <Button label="Resume" small onPress={() => resumeSale(h)} />
+              </View>
+            ))
+          )}
+        </ScrollView>
       </Sheet>
 
       {/* Variant picker */}
@@ -488,7 +677,7 @@ export default function Sell() {
                 </T>
               </View>
             )}
-            {receipt.outstanding > 0 && (
+            {(receipt.outstanding ?? 0) > 0 && (
               <View style={{ backgroundColor: C.danger100, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 8, marginTop: 6 }}>
                 <T w="extra" size={13} color={C.danger500}>
                   Still owing: {fm(receipt.outstanding, currency)}
@@ -496,7 +685,11 @@ export default function Sell() {
               </View>
             )}
             <View style={{ width: "100%", gap: 10, marginTop: 16 }}>
-              {receipt.redirectUrl ? <Button label="Open card payment" icon="card-outline" onPress={() => Linking.openURL(receipt.redirectUrl)} /> : null}
+              {receipt.redirectUrl ? <Button label="Open card payment" icon="card-outline" onPress={() => Linking.openURL(receipt.redirectUrl as string)} /> : null}
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Button label="Send receipt" icon="share-outline" variant="outline" small busy={shareBusy === "text"} disabled={!!shareBusy} onPress={() => share("text")} style={{ flex: 1 }} />
+                <Button label="PDF" icon="document-text-outline" variant="outline" small busy={shareBusy === "pdf"} disabled={!!shareBusy} onPress={() => share("pdf")} style={{ flex: 1 }} />
+              </View>
               <Button label="New sale" variant={receipt.redirectUrl ? "outline" : "primary"} onPress={() => setReceipt(null)} />
             </View>
           </View>

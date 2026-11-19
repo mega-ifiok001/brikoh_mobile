@@ -436,12 +436,14 @@ export function EmptyState({
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  // Connection problems get their own wording so the fix is obvious.
+  const offline = /can't reach|connection|network|offline/i.test(message);
   return (
     <EmptyState
-      icon="cloud-offline-outline"
-      title="Something went wrong"
-      sub={message}
-      action={<Button label="Try again" onPress={onRetry} small />}
+      icon={offline ? "cloud-offline-outline" : "alert-circle-outline"}
+      title={offline ? "You seem to be offline" : "Something went wrong"}
+      sub={offline ? "Check your internet connection, then try again." : message}
+      action={<Button label="Try again" icon="refresh" onPress={onRetry} small />}
     />
   );
 }
