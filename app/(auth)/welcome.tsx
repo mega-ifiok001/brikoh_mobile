@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Button, T } from "../../src/components/ui";
-import MarketScene, { SCENE_H } from "../../src/components/marketScene";
+import MarketScene, { SCENE_H } from "../../src/components/MarketScene";
 import { C } from "../../src/theme";
 
 // First screen for anyone who isn't signed in: an animated market scene + Sign up / Sign in.
@@ -42,7 +42,7 @@ export default function Welcome() {
             Your shop, open all day.
           </T>
           <T w="regular" size={14} color={C.nightMuted} style={{ lineHeight: 21, marginBottom: 6 }}>
-            Sell, track stock and get paid — right from your phone.
+            Sell, track stock and get paid, right from your phone.
           </T>
           <Button label="Create account" onPress={() => router.push("/(auth)/register")} />
           <Pressable
