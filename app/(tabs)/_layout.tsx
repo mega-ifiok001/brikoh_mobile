@@ -3,6 +3,7 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T, tap, type IconName } from "../../src/components/ui";
+import { TourOverlay, TourProvider, TourRing, useTour } from "../../src/components/tour/TourProvider";
 import { C, shadow } from "../../src/theme";
 
 const META: Record<string, { label: string; icon: IconName; iconOn: IconName }> = {
@@ -17,8 +18,10 @@ const META: Record<string, { label: string; icon: IconName; iconOn: IconName }> 
 // Loose prop types on purpose: expo-router vendors react-navigation internally.
 function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; navigateToTab: (routeKey: string) => void }) {
   const insets = useSafeAreaInsets();
+  const tour = useTour();
   return (
     <View
+      onLayout={(e) => tour.setBarHeight(e.nativeEvent.layout.height)}
       style={{
         flexDirection: "row",
         alignItems: "flex-start",
@@ -35,7 +38,12 @@ function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; n
         const focused = state.index === i;
         const isSell = route.name === "sell";
 
+        // While the tour is open it drives the tabs; ignore taps. Non-target tabs are dimmed.
+        const highlight = tour.targetTab === route.name;
+        const dim = !!tour.targetTab && !highlight;
+
         const onPress = () => {
+          if (tour.active) return;
           tap();
           const e = emitter.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
           if (!focused && !e.defaultPrevented) navigateToTab(route.key);
@@ -43,7 +51,7 @@ function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; n
 
         if (isSell) {
           return (
-            <Pressable key={route.key} onPress={onPress} style={{ flex: 1, alignItems: "center" }} accessibilityLabel="Sell">
+            <Pressable key={route.key} onPress={onPress} style={{ flex: 1, alignItems: "center", opacity: dim ? 0.4 : 1 }} accessibilityLabel="Sell">
               <View
                 style={{
                   width: 56,
@@ -59,6 +67,7 @@ function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; n
                 }}
               >
                 <Ionicons name="cart" size={25} color="#fff" />
+                {highlight && <TourRing circle />}
               </View>
               <T w="bold" size={10.5} color={focused ? C.brand : C.ink300} style={{ marginTop: 3 }}>
                 Sell
@@ -68,7 +77,8 @@ function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; n
         }
 
         return (
-          <Pressable key={route.key} onPress={onPress} style={{ flex: 1, alignItems: "center", gap: 3, paddingTop: 2 }} accessibilityLabel={meta.label}>
+          <Pressable key={route.key} onPress={onPress} style={{ flex: 1, alignItems: "center", gap: 3, paddingTop: 2, opacity: dim ? 0.4 : 1 }} accessibilityLabel={meta.label}>
+            {highlight && <TourRing />}
             <Ionicons name={focused ? meta.iconOn : meta.icon} size={23} color={focused ? C.brand : C.ink300} />
             <T w="bold" size={10.5} color={focused ? C.brand : C.ink300}>
               {meta.label}
@@ -82,12 +92,17 @@ function TabBar({ state, emitter, navigateToTab }: { state: any; emitter: any; n
 
 export default function TabsLayout() {
   return (
-    <Tabs tabBar={(p) => <TabBar {...p} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.cream50 } }}>
-      <Tabs.Screen name="home" />
-      <Tabs.Screen name="orders" />
-      <Tabs.Screen name="sell" />
-      <Tabs.Screen name="products" />
-      <Tabs.Screen name="more" />
-    </Tabs>
+    <TourProvider>
+      <View style={{ flex: 1 }}>
+        <Tabs tabBar={(p) => <TabBar {...p} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: C.cream50 } }}>
+          <Tabs.Screen name="home" />
+          <Tabs.Screen name="orders" />
+          <Tabs.Screen name="sell" />
+          <Tabs.Screen name="products" />
+          <Tabs.Screen name="more" />
+        </Tabs>
+        <TourOverlay />
+      </View>
+    </TourProvider>
   );
 }

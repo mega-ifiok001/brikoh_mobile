@@ -11,6 +11,7 @@ import { getAccess, type Feature } from "../../src/lib/access";
 import { ago, fd, titleCase } from "../../src/lib/format";
 import { Avatar, Card, LargeTitle, Pill, T, tap, toast, type IconName } from "../../src/components/ui";
 import { C } from "../../src/theme";
+import { useTour } from "../../src/components/tour/TourProvider";
 
 interface Item {
   label: string;
@@ -83,6 +84,7 @@ function alertText(n: any): string {
 export default function More() {
   const { me, logout } = useAuth();
     const { pref, setPref } = useTheme();
+      const tour = useTour();
   const router = useRouter();
   const access = getAccess(me);
   const store = me.store || {};
@@ -206,6 +208,21 @@ export default function More() {
             </Card>
           </View>
         ))}
+                <View style={{ gap: 8 }}>
+          <SectionLabel>Help</SectionLabel>
+          <Card onPress={tour.start} style={{ padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <Ionicons name="compass-outline" size={20} color={C.brand} />
+            <View style={{ flex: 1 }}>
+              <T w="bold" size={14}>
+                App tour
+              </T>
+              <T w="regular" size={12} color={C.ink400}>
+                A quick walkthrough of Brikoh's main screens
+              </T>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={C.ink300} />
+          </Card>
+        </View>
         <View style={{ gap: 8 }}>
           <SectionLabel>Appearance</SectionLabel>
           <Card style={{ padding: 10 }}>
