@@ -15,7 +15,7 @@ import { usePushNotifications } from "../src/lib/notifications";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const MIN_SPLASH_MS = 2400; // keep the launch animation on screen at least this long
+const MIN_SPLASH_MS = 3200; // long enough for the logo to roll in and the name to be typed out
 
 function Gate() {
   const { loading, isAuthed, isOnboarded } = useAuth();
@@ -54,7 +54,7 @@ function Gate() {
   }
 
   // The login screen is dark in both themes.
-  const lightIcons = resolved === "dark" || pathname === "/login";
+  const lightIcons = resolved === "dark" || pathname === "/login" || pathname === "/welcome";
 
   return (
     <>
