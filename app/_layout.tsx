@@ -68,7 +68,9 @@ function Gate() {
   }
 
   // The login screen is dark in both themes.
-  const lightIcons = resolved === "dark" || pathname === "/login" || pathname === "/welcome";
+ const lightIcons =
+  resolved === "dark" ||
+  ["/login", "/welcome", "/forgot-password", "/reset-password", "/verify-email"].includes(pathname);
 
   return (
     <>

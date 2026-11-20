@@ -133,7 +133,7 @@ export default function Register() {
             <Input
               value={f.email}
               onChangeText={set("email")}
-              placeholder="you@store.com"
+              placeholder="you@example.com"
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"

@@ -4,6 +4,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
 import { api } from "../src/lib/api";
+import { useRouter } from "expo-router";
+import { resendVerification } from "../src/lib/authApi";
 import { apiErrorMessage, titleCase } from "../src/lib/format";
 import { Button, Field, Input, T, toast } from "../src/components/ui";
 import { SelectField } from "../src/components/kit";
@@ -20,6 +22,7 @@ const CURRENCIES = ["NGN", "USD", "GHS", "KES", "ZAR"];
 // New users create their store right here instead of being sent to the website.
 export default function Setup() {
   const { me, refresh, logout } = useAuth();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   // Set when the server says the email isn't verified yet (403 VERIFICATION_REQUIRED).
@@ -35,8 +38,14 @@ export default function Setup() {
   const resend = async () => {
     setResending(true);
     try {
-      await api.post("/api/dashboard/resend-verification");
-      toast.success("Verification email sent. Check your inbox.");
+           const sent = await resendVerification();
+      if (sent) {
+        toast.success("Verification email sent. Check your inbox.");
+      } else {
+        setNeedsVerify(false);
+        await refresh();
+        toast.success("Your email is already verified. Tap Create my store.");
+      }
     } catch (e: any) {
       if (e?.code === "ALREADY_VERIFIED") {
         setNeedsVerify(false);
@@ -121,6 +130,7 @@ export default function Setup() {
                 We sent a verification link to {me.account?.email || "your email"}. Open it, then come back here and tap Create my store.
               </T>
               <Button label="Resend verification email" variant="outline" small busy={resending} onPress={resend} />
+              <Button label="I have a verification code" variant="ghost" small onPress={() => router.push("/verify-email")} />
             </View>
           )}
 

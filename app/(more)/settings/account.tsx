@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useRouter } from "expo-router";
 import { api } from "../../../src/lib/api";
+import { resendVerification } from "../../../src/lib/authApi";
 import { apiErrorMessage } from "../../../src/lib/format";
 import { useAuth } from "../../../src/context/AuthContext";
 import { Button, Card, Field, Input, T, toast } from "../../../src/components/ui";
@@ -8,14 +10,34 @@ import { SaveBar, SettingsScreen } from "../../../src/components/settings/bits";
 import { C } from "../../../src/theme";
 
 export default function AccountSettings() {
-  const { me, logout } = useAuth();
+  const { me, logout, refresh } = useAuth();
+  const router = useRouter();
   const account: any = me.account || {};
   const name = account.fullName || account.name || [account.firstName, account.lastName].filter(Boolean).join(" ");
+  const verified = !!account.emailVerifiedAt;
 
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [pwBusy, setPwBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const [delOpen, setDelOpen] = useState(false);
   const [delBusy, setDelBusy] = useState(false);
+
+  const resend = async () => {
+    setResending(true);
+    try {
+      const sent = await resendVerification();
+      if (sent) {
+        toast.success("Verification email sent. Check your inbox.");
+      } else {
+        toast.success("Your email is already verified.");
+        await refresh();
+      }
+    } catch (e: any) {
+      toast.error(apiErrorMessage(e, "Couldn't send the email. Try again in a minute."));
+    } finally {
+      setResending(false);
+    }
+  };
 
   const savePassword = async () => {
     if (!pw.current) return toast.error("Enter your current password.");
@@ -57,8 +79,20 @@ export default function AccountSettings() {
       <Card style={{ paddingHorizontal: 14 }}>
         {name ? <DetailRow label="Name" value={name} /> : null}
         <DetailRow label="Email" value={account.email || "-"} />
+        <DetailRow label="Email status" value={verified ? "Verified" : "Not verified"} />
         {account.phone ? <DetailRow label="Phone" value={String(account.phone)} /> : null}
       </Card>
+
+      {!verified && (
+        <Card style={{ padding: 14, gap: 10 }}>
+          <T w="regular" size={13} color={C.ink500}>
+            Verify your email to create your store and receive account notices.
+          </T>
+          <Button label="Resend verification email" variant="outline" small busy={resending} onPress={resend} />
+          <Button label="I have a verification code" variant="ghost" small onPress={() => router.push("/verify-email")} />
+        </Card>
+      )}
+
       <T w="regular" size={12} color={C.ink400}>
         Profile fields (name, phone) are managed at signup. Password and account deletion live here.
       </T>

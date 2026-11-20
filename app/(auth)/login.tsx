@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, View } from "react-native";
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -80,12 +80,12 @@ export default function Login() {
                 right={
                   <Pressable onPress={() => setShow((s) => !s)} hitSlop={10}>
                     <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#8a7d71" />
-                  </Pressable>
+                  </Pressable>  
                 }
               />
               <Button label="Sign in" onPress={submit} busy={busy} />
               <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 4, paddingTop: 4 }}>
-                <Pressable onPress={() => Linking.openURL("https://brikoh.com/#/auth")} hitSlop={10}>
+                 <Pressable onPress={() => router.push("/(auth)/forgot-password")} hitSlop={10}>
                   <T w="semi" size={13} color="#8a7d71">
                     Forgot password?
                   </T>
