@@ -61,7 +61,7 @@ export default function Login() {
                 dark
                 value={email}
                 onChangeText={setEmail}
-                placeholder="you@store.com"
+                placeholder="you@example.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"

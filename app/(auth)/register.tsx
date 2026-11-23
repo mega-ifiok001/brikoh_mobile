@@ -29,44 +29,53 @@ export default function Register() {
   const set = (k: keyof typeof f) => (v: string) =>
     setF((s) => ({ ...s, [k]: v }));
 
-  const submit = async () => {
-    if (!f.firstName.trim() || !f.lastName.trim() || !f.email.trim() || !f.phone.trim()) {
-      toast.error("Please fill in all the fields.");
-      return;
-    }
+  
+const submit = async () => {
+  if (
+    !f.firstName.trim() ||
+    !f.lastName.trim() ||
+    !f.email.trim() ||
+    !f.phone.trim()
+  ) {
+    toast.error("Please fill in all the fields.");
+    return;
+  }
 
-    if (f.password.length < 8) {
-      toast.error("Your password needs at least 8 characters.");
-      return;
-    }
+  if (f.password.length < 8) {
+    toast.error("Your password needs at least 8 characters.");
+    return;
+  }
 
-    if (f.password !== f.confirmPassword) {
-      toast.error("The two passwords don't match.");
-      return;
-    }
+  if (f.password !== f.confirmPassword) {
+    toast.error("The two passwords don't match.");
+    return;
+  }
 
-    setBusy(true);
+  setBusy(true);
 
-    try {
-      await register({
-        ...f,
-        email: f.email.trim().toLowerCase(),
-        firstName: f.firstName.trim(),
-        lastName: f.lastName.trim(),
-        phone: f.phone.trim(),
-      });
+  try {
+    await register({
+      ...f,
+      email: f.email.trim().toLowerCase(),
+      firstName: f.firstName.trim(),
+      lastName: f.lastName.trim(),
+      phone: f.phone.trim(),
+    });
 
-      toast.success("Account created. Welcome to Brikoh!");
-    } catch (e: any) {
-      toast.error(
-        apiErrorMessage(e, "Couldn't create your account.", {
-          EMAIL_TAKEN: "An account with that email already exists.",
-        })
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
+    toast.success("Registration successful. Please verify your email.");
+
+    router.replace("/verify-email");
+  } catch (e: any) {
+    toast.error(
+      apiErrorMessage(e, "Couldn't create your account.", {
+        EMAIL_TAKEN: "An account with that email already exists.",
+      })
+    );
+  } finally {
+    setBusy(false);
+  }
+};
+
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.cream50 }}>

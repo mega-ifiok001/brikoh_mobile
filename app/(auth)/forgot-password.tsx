@@ -55,7 +55,7 @@ export default function ForgotPassword() {
         dark
         value={email}
         onChangeText={setEmail}
-        placeholder="you@store.com"
+        placeholder="Your email here"
         keyboardType="email-address"
         autoCapitalize="none"
         autoComplete="email"

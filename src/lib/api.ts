@@ -4,7 +4,7 @@
 // (expo-secure-store) with an in-memory copy so requests stay synchronous.
 import * as SecureStore from "expo-secure-store";
 
-export const API_BASE = "https://brikoh-backend.onrender.com/api-docs/";
+export const API_BASE = "https://brikoh-backend.onrender.com";
 
 const AT_KEY = "brikoh.at";
 const RT_KEY = "brikoh.rt";
