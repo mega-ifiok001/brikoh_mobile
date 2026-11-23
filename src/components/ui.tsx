@@ -278,7 +278,7 @@ export function Input({
         underlineColorAndroid="transparent"
         selectionColor={C.brand}
         cursorColor={C.brand}
-        style={[{ flex: 1, fontFamily: F.semi, fontSize: 15, color: dark ? C.cream50 : C.ink900, height: "100%" }, NO_OUTLINE]}
+        style={[{ flex: 1, fontFamily: F.semi, fontSize: 15, color: dark ? "#ffffff" : C.ink900, height: "100%" }, NO_OUTLINE]}
       />
       {right}
     </View>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
 import { api } from "../../../src/lib/api";
-import { resendVerification } from "../../../src/lib/authApi";
+import { changePassword, resendVerification } from "../../../src/lib/authApi";
 import { apiErrorMessage } from "../../../src/lib/format";
 import { useAuth } from "../../../src/context/AuthContext";
 import { Button, Card, Field, Input, T, toast } from "../../../src/components/ui";
@@ -27,7 +27,7 @@ export default function AccountSettings() {
     try {
       const sent = await resendVerification();
       if (sent) {
-        toast.success("Verification email sent. Check your inbox.");
+        toast.success("A new code is on its way. Check your inbox.");
       } else {
         toast.success("Your email is already verified.");
         await refresh();
@@ -45,9 +45,13 @@ export default function AccountSettings() {
     if (pw.next !== pw.confirm) return toast.error("New passwords don't match.");
     setPwBusy(true);
     try {
-      await api.post("/api/dashboard/settings/password", { currentPassword: pw.current, newPassword: pw.next, confirmPassword: pw.confirm });
+      await changePassword({
+        currentPassword: pw.current,
+        newPassword: pw.next,
+        confirmPassword: pw.confirm,
+      });
       setPw({ current: "", next: "", confirm: "" });
-      toast.success("Password changed. Other sessions have been signed out.");
+      toast.success("Password changed.");
     } catch (e: any) {
       toast.error(apiErrorMessage(e, "Couldn't change the password.", { INVALID_CREDENTIALS: "Current password is incorrect." }));
     } finally {
@@ -88,7 +92,7 @@ export default function AccountSettings() {
           <T w="regular" size={13} color={C.ink500}>
             Verify your email to create your store and receive account notices.
           </T>
-          <Button label="Resend verification email" variant="outline" small busy={resending} onPress={resend} />
+          <Button label="Resend verification code" variant="outline" small busy={resending} onPress={resend} />
           <Button label="I have a verification code" variant="ghost" small onPress={() => router.push("/verify-email")} />
         </Card>
       )}
