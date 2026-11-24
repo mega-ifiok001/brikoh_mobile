@@ -30,6 +30,7 @@ export type Feature =
   | "reports"
   | "analytics"
   | "staff"
+  | "account"
   | "settings"
   | "tickets";
 
@@ -49,6 +50,7 @@ export const ALL_FEATURES: Feature[] = [
   "reports",
   "analytics",
   "staff",
+  "account",
   "settings",
   "tickets",
 ];
@@ -66,6 +68,7 @@ export const ROLE_META: Record<RoleId, { label: string; hint: string }> = {
  */
 const RESTRICTED_FEATURES: Record<"MANAGER" | "STAFF", readonly Feature[]> = {
   MANAGER: [
+    "account",
     "overview",
     "pos",
     "orders",
@@ -79,7 +82,7 @@ const RESTRICTED_FEATURES: Record<"MANAGER" | "STAFF", readonly Feature[]> = {
     "wallet",
     "expenses",
   ],
-  STAFF: ["overview", "pos", "orders", "products", "customers", "invoices"],
+  STAFF: ["account", "overview", "pos", "orders", "products", "customers", "invoices"],
 };
 
 /**

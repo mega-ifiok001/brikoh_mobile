@@ -52,6 +52,7 @@ interface AuthCtxType {
   isAuthed: boolean;
   isOnboarded: boolean;
   login: (email: string, password: string) => Promise<Me>;
+  loginWithPin: (email: string, pin: string) => Promise<Me>;
   register: (p: {
     email: string;
     password: string;
@@ -125,6 +126,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadMe]
   );
 
+  const loginWithPin = useCallback(
+    async (email: string, pin: string) => {
+      const res = await api.publicPost("/api/public/auth/pin-login", { email, pin });
+      const t = extractTokens(res);
+      if (!t.at) throw new Error("PIN sign-in did not return a session token.");
+      return loadMe(t);
+    },
+    [loadMe]
+  );
+
   const register = useCallback<AuthCtxType["register"]>(
     async (p) => {
       const res = await api.publicPost("/api/public/auth/register", p);
@@ -159,6 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthed: authed,
         isOnboarded: !!me.store?.id,
         login,
+        loginWithPin,
         register,
         logout,
         refresh,

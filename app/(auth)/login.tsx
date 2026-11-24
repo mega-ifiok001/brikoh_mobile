@@ -10,28 +10,42 @@ import { apiErrorMessage } from "../../src/lib/format";
 import { C } from "../../src/theme";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, loginWithPin } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [usePin, setUsePin] = useState(false);
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!email.trim() || !password) {
-      toast.error("Enter your email and password.");
+    if (!email.trim() || (usePin ? pin.length !== 6 : !password)) {
+      toast.error(usePin ? "Enter your email and six-digit PIN." : "Enter your email and password.");
       return;
     }
     setBusy(true);
     try {
-      await login(email.trim().toLowerCase(), password);
+      if (usePin) {
+        await loginWithPin(email.trim().toLowerCase(), pin);
+        setPin("");
+      } else {
+        await login(email.trim().toLowerCase(), password);
+      }
       // The root layout's guards route us to the dashboard (or setup) automatically.
     } catch (e: any) {
-      toast.error(
-        apiErrorMessage(e, "Couldn't sign you in.", {
-          INVALID_CREDENTIALS: "That email and password don't match.",
-        })
-      );
+      if (usePin) {
+        setPin("");
+        if (/PIN.*LOCK|LOCK.*PIN/i.test(String(e?.code || ""))) {
+          toast.error("PIN sign-in is locked for 15 minutes after five incorrect attempts. You can sign in with your password meanwhile.");
+        } else if (e?.status === 429) {
+          toast.error("PIN sign-in is temporarily rate limited. Try again later or sign in with your password.");
+        } else {
+          toast.error(apiErrorMessage(e, "Couldn't sign you in.", { INVALID_CREDENTIALS: "That email or PIN is incorrect." }));
+        }
+      } else {
+        toast.error(apiErrorMessage(e, "Couldn't sign you in.", { INVALID_CREDENTIALS: "That email and password don't match." }));
+      }
     } finally {
       setBusy(false);
     }
@@ -67,25 +81,39 @@ export default function Login() {
                 autoComplete="email"
                 textContentType="emailAddress"
               />
-              <Input
-                dark
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Password"
-                secureTextEntry={!show}
-                autoCapitalize="none"
-                autoComplete="password"
-                textContentType="password"
-                onSubmitEditing={submit}
-                right={
-                  <Pressable onPress={() => setShow((s) => !s)} hitSlop={10}>
-                    <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#8a7d71" />
-                  </Pressable>  
-                }
-              />
-              <Button label="Sign in" onPress={submit} busy={busy} />
+              {usePin ? (
+                <Input
+                  dark
+                  value={pin}
+                  onChangeText={(v) => setPin(v.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="Six-digit account PIN"
+                  secureTextEntry
+                  keyboardType="number-pad"
+                  autoComplete="off"
+                  maxLength={6}
+                  onSubmitEditing={submit}
+                />
+              ) : (
+                <Input
+                  dark
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Password"
+                  secureTextEntry={!show}
+                  autoCapitalize="none"
+                  autoComplete="password"
+                  textContentType="password"
+                  onSubmitEditing={submit}
+                  right={
+                    <Pressable onPress={() => setShow((s) => !s)} hitSlop={10}>
+                      <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#8a7d71" />
+                    </Pressable>
+                  }
+                />
+              )}
+              <Button label={usePin ? "Sign in with PIN" : "Sign in"} onPress={submit} busy={busy} />
               <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 4, paddingTop: 4 }}>
-                 <Pressable onPress={() => router.push("/(auth)/forgot-password")} hitSlop={10}>
+                <Pressable onPress={() => router.push("/(auth)/forgot-password")} hitSlop={10}>
                   <T w="semi" size={13} color="#8a7d71">
                     Forgot password?
                   </T>
@@ -96,6 +124,19 @@ export default function Login() {
                   </T>
                 </Pressable>
               </View>
+              <Pressable
+                onPress={() => {
+                  setUsePin((v) => !v);
+                  setPin("");
+                  setPassword("");
+                }}
+                hitSlop={8}
+                style={{ alignItems: "center", paddingVertical: 8 }}
+              >
+                <T w="bold" size={13} color={C.brand}>
+                  {usePin ? "Use email and password instead" : "Sign in with account PIN"}
+                </T>
+              </Pressable>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>

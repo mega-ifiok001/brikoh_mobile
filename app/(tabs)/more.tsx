@@ -57,6 +57,7 @@ const GROUPS: Group[] = [
     items: [
       { label: "Staff", icon: "person-outline", feature: "staff", route: "/staff" },
       { label: "Support tickets", icon: "help-buoy-outline", feature: "tickets", route: "/tickets" },
+      { label: "PIN sign-in", icon: "keypad-outline", feature: "account", route: "/settings/pin" },
       { label: "Settings & billing", icon: "settings-outline", feature: "settings", route: "/settings" },
     ],
   },

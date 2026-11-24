@@ -64,6 +64,7 @@ export default function SettingsHub() {
         </T>
         <Card style={{ paddingHorizontal: 14 }}>
           <ListRow icon="notifications-outline" title="Alerts" sub="Email alerts and customer receipts" right={chev} onPress={go("/settings/notifications")} />
+          <ListRow icon="keypad-outline" title="PIN sign-in" sub="Set or change your six-digit account PIN" right={chev} onPress={go("/settings/pin")} />
           <ListRow icon="key-outline" title="Account and password" sub="Change password, delete account" right={chev} onPress={go("/settings/account")} />
           <ListRow icon="ribbon-outline" title="Plan and billing" sub="Usage, upgrade, billing history" right={chev} onPress={go("/settings/plan")} last />
         </Card>
