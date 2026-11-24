@@ -3,58 +3,22 @@ import { RefreshControl, ScrollView, View } from "react-native";
 import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
 import { getAccess } from "../../src/lib/access";
-import { apiErrorMessage, asList, fd, fm, pick, plural, rawNum, titleCase } from "../../src/lib/format";
-import { Card, Chip, EmptyState, ErrorState, ListSkeleton, Pill, T } from "../../src/components/ui";
+import { apiErrorMessage, asList, fd, fdDateOnly, fm, pick, plural, rawNum, titleCase, toISODate } from "../../src/lib/format";
+import { Button, Card, EmptyState, ErrorState, ListSkeleton, Pill, T } from "../../src/components/ui";
 import { Page, SectionTitle, Segmented, StatTile } from "../../src/components/kit";
 import { BarList } from "../../src/components/analytics/Charts";
+import { DateField, isValidDate } from "../../src/components/expenses/DateField";
 import { C } from "../../src/theme";
 
-const PERIODS = [
-  { key: "week", label: "This week" },
-  { key: "month", label: "This month" },
-  { key: "quarter", label: "This quarter" },
-  { key: "year", label: "This year" },
-] as const;
-type PeriodKey = (typeof PERIODS)[number]["key"];
 type TabKey = "pnl" | "expenses" | "inventory";
-
-/** Start/end of a period in local time. Week starts on Monday; end is the end of today. */
-function rangeFor(period: PeriodKey): { start: string; end: string } {
-  const now = new Date();
-  const start = new Date(now);
-  switch (period) {
-    case "week": {
-      const day = now.getDay();
-      start.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
-      break;
-    }
-    case "month":
-      start.setDate(1);
-      break;
-    case "quarter":
-      start.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
-      break;
-    case "year":
-      start.setMonth(0, 1);
-      break;
-  }
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
-  return { start: start.toISOString(), end: end.toISOString() };
-}
-
-function periodQuery(period: PeriodKey): string {
-  const { start, end } = rangeFor(period);
-  return new URLSearchParams({ period, start, end }).toString();
-}
 
 export default function Reports() {
   const { me } = useAuth();
   const currency: string = (me.store as any)?.currency || "NGN";
   const allowed = getAccess(me).can("reports");
 
-  const [period, setPeriod] = useState<PeriodKey>("week");
+  const [date, setDate] = useState(() => toISODate(new Date()));
+  const [appliedDate, setAppliedDate] = useState(() => toISODate(new Date()));
   const [tab, setTab] = useState<TabKey>("pnl");
   const [pnl, setPnl] = useState<any>(null);
   const [byCategory, setByCategory] = useState<any[]>([]);
@@ -64,6 +28,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dateError = isValidDate(date) ? null : "Enter a valid date in YYYY-MM-DD format.";
   const reqId = useRef(0);
 
   const load = useCallback(async () => {
@@ -71,7 +36,7 @@ export default function Reports() {
     setLoading(true);
     setError(null);
     try {
-      const qs = periodQuery(period);
+      const qs = new URLSearchParams({ date: appliedDate }).toString();
       const [pnlRes, expRes, invRes]: any[] = await Promise.all([
         api.get(`/api/dashboard/reports/pnl?${qs}`),
         api.get(`/api/dashboard/reports/expenses-by-category?${qs}`),
@@ -117,7 +82,7 @@ export default function Reports() {
         setRefreshing(false);
       }
     }
-  }, [period]);
+  }, [appliedDate]);
 
   useEffect(() => {
     if (allowed) load();
@@ -131,13 +96,12 @@ export default function Reports() {
     );
   }
 
-  const periodLabel = PERIODS.find((p) => p.key === period)?.label || period;
   const revenue = rawNum(pnl?.revenue);
   const cogs = rawNum(pnl?.cogs);
   const expenses = rawNum(pnl?.expenses);
   const netProfit = rawNum(pnl?.netProfit);
   const unpriced: number = pnl?.cogsUnpricedLineItems ?? 0;
-  const rangeLabel = pnl?.period ? `${fd(pnl.period.start)} → ${fd(pnl.period.end)}` : "";
+  const dateLabel = fdDateOnly(appliedDate);
 
   return (
     <Page title="Reports">
@@ -155,11 +119,17 @@ export default function Reports() {
           />
         }
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {PERIODS.map((p) => (
-            <Chip key={p.key} label={p.label} on={period === p.key} onPress={() => setPeriod(p.key)} />
-          ))}
-        </ScrollView>
+        <Card style={{ padding: 14, gap: 12 }}>
+          <T w="bold" size={14}>Report date</T>
+          <DateField label="Date" value={date} onChange={setDate} quick />
+          {dateError ? <T w="semi" size={12} color={C.danger500}>{dateError}</T> : null}
+          <Button
+            label="Apply date"
+            onPress={() => setAppliedDate(date)}
+            disabled={!!dateError || loading}
+            small
+          />
+        </Card>
 
         <Segmented
           options={[
@@ -180,13 +150,12 @@ export default function Reports() {
         ) : tab === "pnl" ? (
           <>
             <T w="semi" size={12} color={C.ink400}>
-              Profit & loss · {periodLabel}
-              {rangeLabel ? ` · ${rangeLabel}` : ""}
+              Profit & loss · {dateLabel}
             </T>
             {unpriced > 0 ? (
               <View style={{ backgroundColor: C.gold100, borderRadius: 14, padding: 12 }}>
                 <T w="semi" size={13} color={C.gold600} style={{ lineHeight: 19 }}>
-                  {plural(unpriced, "item")} sold this period {unpriced === 1 ? "has" : "have"} no recorded cost price, so profit may be overstated. Set cost prices on your products to fix this.
+                  {plural(unpriced, "item")} sold on this date {unpriced === 1 ? "has" : "have"} no recorded cost price, so profit may be overstated. Set cost prices on your products to fix this.
                 </T>
               </View>
             ) : null}
@@ -217,12 +186,12 @@ export default function Reports() {
           <>
             <SectionTitle>Expenses by category</SectionTitle>
             <T w="semi" size={12} color={C.ink400}>
-              {periodLabel} · Total {fm(grandTotal, currency)}
+              {dateLabel} · Total {fm(grandTotal, currency)}
             </T>
             <Card style={{ padding: 16 }}>
               {byCategory.length === 0 ? (
                 <T w="semi" size={13} color={C.ink400}>
-                  No expenses recorded in this period.
+                  No expenses recorded on this date.
                 </T>
               ) : (
                 <BarList

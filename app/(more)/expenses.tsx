@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
 import { getAccess } from "../../src/lib/access";
-import { apiErrorMessage, asList, fd, fm, rawNum, titleCase, toISODate } from "../../src/lib/format";
+import { apiErrorMessage, asList, fd, fdDateOnly, fm, rawNum, titleCase, toISODate } from "../../src/lib/format";
 import { Button, Card, EmptyState, ErrorState, Field, Input, ListSkeleton, Money, Pill, Sheet, T, toast } from "../../src/components/ui";
 import { AddButton, ConfirmSheet, Page, SelectField } from "../../src/components/kit";
 import { DateField, isValidDate } from "../../src/components/expenses/DateField";
@@ -22,13 +22,6 @@ const catColors = (): Record<string, string> => ({
   OTHER: C.cream300,
 });
 
-function monthBounds(offset: number): { from: Date; to: Date } {
-  const now = new Date();
-  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-  const to = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
-  return { from: d, to };
-}
-
 type FormState = { category: string; amount: string; date: string; description: string };
 const blank = (): FormState => ({ category: "OTHER", amount: "", date: toISODate(new Date()), description: "" });
 
@@ -37,7 +30,8 @@ export default function Expenses() {
   const currency: string = (me.store as any)?.currency || "NGN";
   const allowed = getAccess(me).can("expenses");
 
-  const [offset, setOffset] = useState(0);
+  const [date, setDate] = useState(() => toISODate(new Date()));
+  const [appliedDate, setAppliedDate] = useState(() => toISODate(new Date()));
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,27 +46,18 @@ export default function Expenses() {
   const [delFor, setDelFor] = useState<any | null>(null);
   const [delBusy, setDelBusy] = useState(false);
 
-  const { from } = useMemo(() => monthBounds(offset), [offset]);
-  const monthLabel = from.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const dateLabel = isValidDate(appliedDate) ? fdDateOnly(appliedDate) : appliedDate;
 
   const load = useCallback(
     async (quiet = false) => {
       if (!quiet) setLoading(true);
       setError(null);
       try {
-        const { from: f, to: t } = monthBounds(offset);
         const qs = new URLSearchParams();
-        qs.set("from", toISODate(f));
-        qs.set("to", toISODate(t));
+        qs.set("date", appliedDate);
         qs.set("limit", "100");
         const res: any = await api.get(`/api/dashboard/expenses?${qs.toString()}`);
-        let list = asList(res, "expenses", "items", "data");
-        const fs = toISODate(f);
-        const ts = toISODate(t);
-        list = list.filter((x) => {
-          const d = String(x.date || "").slice(0, 10);
-          return d >= fs && d <= ts;
-        });
+        const list = asList(res, "expenses", "items", "data");
         list.sort((a, b) => new Date(b.date || b.createdAt).getTime() - new Date(a.date || a.createdAt).getTime());
         setItems(list);
       } catch (e: any) {
@@ -82,7 +67,7 @@ export default function Expenses() {
         setRefreshing(false);
       }
     },
-    [offset]
+    [appliedDate]
   );
 
   useEffect(() => {
@@ -174,21 +159,15 @@ export default function Expenses() {
 
   const header = (
     <View style={{ gap: 12, marginBottom: 4 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: C.white, borderWidth: 1, borderColor: C.cream200, borderRadius: 16, padding: 4 }}>
-        <Pressable onPress={() => setOffset((o) => o + 1)} hitSlop={8} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}>
-          <Ionicons name="chevron-back" size={20} color={C.ink900} />
-        </Pressable>
-        <T w="extra" size={14.5}>
-          {monthLabel}
-        </T>
-        <Pressable disabled={offset >= 0} onPress={() => setOffset((o) => o - 1)} hitSlop={8} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center", opacity: offset >= 0 ? 0.3 : 1 }}>
-          <Ionicons name="chevron-forward" size={20} color={C.ink900} />
-        </Pressable>
-      </View>
+      <Card style={{ padding: 14, gap: 10 }}>
+        <DateField label="Expenses date" value={date} onChange={setDate} quick />
+        {!isValidDate(date) ? <T w="semi" size={12} color={C.danger500}>Enter a valid date in YYYY-MM-DD format.</T> : null}
+        <Button label="Apply date" onPress={() => setAppliedDate(date)} disabled={!isValidDate(date) || loading} small />
+      </Card>
 
       <Card style={{ padding: 16 }}>
         <T w="semi" size={12} color={C.ink400}>
-          Spent in {monthLabel.split(" ")[0]}
+          Spent on {dateLabel}
         </T>
         <T w="display" size={30} style={{ letterSpacing: -0.5, marginTop: 2 }}>
           {fm(total, currency)}
@@ -202,7 +181,7 @@ export default function Expenses() {
         </T>
         {byCat.length === 0 ? (
           <T w="semi" size={13} color={C.ink400} style={{ marginTop: 8 }}>
-            Nothing recorded this month.
+            Nothing recorded on this date.
           </T>
         ) : (
           <View style={{ gap: 10, marginTop: 10 }}>
@@ -249,7 +228,7 @@ export default function Expenses() {
             ) : (
               <EmptyState
                 icon="cash-outline"
-                title={`No expenses in ${monthLabel}`}
+                title={`No expenses on ${dateLabel}`}
                 sub="Rent, transport, packaging, salaries, data. Record them here and the P&L does the maths."
                 action={<Button label="Record an expense" icon="add" onPress={openCreate} small />}
               />

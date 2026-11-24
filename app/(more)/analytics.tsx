@@ -1,36 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
 import { getAccess } from "../../src/lib/access";
-import { apiErrorMessage, fd, fm, plural, rawNum, titleCase } from "../../src/lib/format";
-import { Button, Card, Chip, EmptyState, ErrorState, Pill, Skeleton, T } from "../../src/components/ui";
+import { apiErrorMessage, fd, fdDateOnly, fm, plural, rawNum, titleCase, toISODate } from "../../src/lib/format";
+import { Button, Card, EmptyState, ErrorState, Pill, Skeleton, T } from "../../src/components/ui";
 import { Page, Segmented, StatTile } from "../../src/components/kit";
 import { BarList, BucketChart, type Bucket } from "../../src/components/analytics/Charts";
+import { DateField, isValidDate } from "../../src/components/expenses/DateField";
 import { C } from "../../src/theme";
 
-// Date-range presets. The contract wants start/end as UTC ISO-8601 with an
-// explicit offset, half-open (end exclusive), max 366 days.
-const RANGES = [
-  { key: "7d", label: "Last 7 days", days: 7 },
-  { key: "30d", label: "Last 30 days", days: 30 },
-  { key: "90d", label: "Last 90 days", days: 90 },
-  { key: "365d", label: "Last 12 months", days: 365 },
-] as const;
-type RangeKey = (typeof RANGES)[number]["key"];
-
-function rangeFor(key: RangeKey): { start: string; end: string } {
-  const days = RANGES.find((r) => r.key === key)?.days ?? 30;
-  const now = new Date();
-  // end is exclusive: UTC midnight after today so today's orders are included.
-  const endUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  const startUtc = endUtc - days * 86_400_000;
-  return { start: new Date(startUtc).toISOString(), end: new Date(endUtc).toISOString() };
-}
-
-type Granularity = "daily" | "weekly";
 type TabKey = "overview" | "trends" | "staff" | "channels";
 
 // 403 from the advanced endpoints just means "not on this plan" - an upsell state, not an error.
@@ -71,12 +52,12 @@ export default function Analytics() {
     };
   }, []);
 
-  const [rangeKey, setRangeKey] = useState<RangeKey>("30d");
-  const [granularity, setGranularity] = useState<Granularity>("daily");
+  const [date, setDate] = useState(() => toISODate(new Date()));
+  const [appliedDate, setAppliedDate] = useState(() => toISODate(new Date()));
   const [tab, setTab] = useState<TabKey>("overview");
 
-  const { start, end } = useMemo(() => rangeFor(rangeKey), [rangeKey]);
-  const qs = `start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+  const dateQuery = `date=${encodeURIComponent(appliedDate)}`;
+  const dateError = isValidDate(date) ? null : "Enter a valid date in YYYY-MM-DD format.";
 
   const [summary, setSummary] = useState<any>(null);
   const [timeseries, setTimeseries] = useState<any>(null);
@@ -94,11 +75,11 @@ export default function Analytics() {
     setError(null);
     try {
       const [summaryRes, tsRes, trendsRes, staffRes, channelsRes] = await Promise.all([
-        api.get(`/api/dashboard/analytics/summary?${qs}&top=5`),
-        api.get(`/api/dashboard/analytics/timeseries?${qs}&granularity=${granularity}`),
-        getAdvanced(`/api/dashboard/analytics/trends?${qs}&granularity=${granularity}`),
-        getAdvanced(`/api/dashboard/analytics/staff-performance?${qs}`),
-        getAdvanced(`/api/dashboard/analytics/channels?${qs}`),
+        api.get(`/api/dashboard/analytics/summary?${dateQuery}`),
+        api.get(`/api/dashboard/analytics/timeseries?${dateQuery}`),
+        getAdvanced(`/api/dashboard/analytics/trends?${dateQuery}`),
+        getAdvanced(`/api/dashboard/analytics/staff-performance?${dateQuery}`),
+        getAdvanced(`/api/dashboard/analytics/channels?${dateQuery}`),
       ]);
       if (id !== reqId.current) return;
       setSummary(summaryRes);
@@ -124,7 +105,7 @@ export default function Analytics() {
         setRefreshing(false);
       }
     }
-  }, [qs, granularity]);
+  }, [dateQuery]);
 
   useEffect(() => {
     if (allowed) load();
@@ -162,13 +143,13 @@ export default function Analytics() {
         }
       >
         <T w="semi" size={12.5} color={C.ink400}>
-          {fd(start)} → {fd(end)}
+          {fdDateOnly(appliedDate)}
         </T>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {RANGES.map((r) => (
-            <Chip key={r.key} label={r.label} on={rangeKey === r.key} onPress={() => setRangeKey(r.key)} />
-          ))}
-        </ScrollView>
+        <Card style={{ padding: 14, gap: 10 }}>
+          <DateField label="Analytics date" value={date} onChange={setDate} quick />
+          {dateError ? <T w="semi" size={12} color={C.danger500}>{dateError}</T> : null}
+          <Button label="Apply date" onPress={() => setAppliedDate(date)} disabled={!!dateError || loading} small />
+        </Card>
         <Segmented
           value={tab}
           onChange={(v) => setTab(v as TabKey)}
@@ -211,11 +192,6 @@ export default function Analytics() {
                     <T w="display" size={16}>
                       Sales over time
                     </T>
-                    <View style={{ flexDirection: "row", gap: 6 }}>
-                      {(["daily", "weekly"] as Granularity[]).map((g) => (
-                        <Chip key={g} label={titleCase(g)} on={granularity === g} onPress={() => setGranularity(g)} />
-                      ))}
-                    </View>
                   </View>
                   <BucketChart buckets={buckets} currency={currency} />
                 </Card>
@@ -225,7 +201,7 @@ export default function Analytics() {
                   </T>
                   {bestSellers.length === 0 ? (
                     <T w="semi" size={13} color={C.ink400} style={{ marginTop: 14 }}>
-                      No sales in this range yet.
+                      No sales on this date yet.
                     </T>
                   ) : (
                     <View style={{ marginTop: 14 }}>
@@ -303,7 +279,7 @@ function TrendsTab({ data, currency, onUpgrade }: { data: any; currency: string;
         <StatTile label="Change" value={hasChange ? `${up ? "+" : ""}${change.toFixed(1)}%` : "—"} tone={hasChange ? (up ? "green" : "danger") : undefined} />
       </View>
       <T w="regular" size={11.5} color={C.ink400}>
-        {plural(data.totals?.orderCount ?? 0, "order")} this period. Previous period: {fd(data.previousPeriod?.start)} → {fd(data.previousPeriod?.end)}.
+        {plural(data.totals?.orderCount ?? 0, "order")} on this date. Previous period: {fd(data.previousPeriod?.start)} → {fd(data.previousPeriod?.end)}.
       </T>
       <Card style={{ padding: 16 }}>
         <T w="display" size={16}>
@@ -331,7 +307,7 @@ function StaffTab({ data, currency, onUpgrade }: { data: any; currency: string; 
       </T>
       {staff.length === 0 ? (
         <T w="semi" size={13} color={C.ink400} style={{ marginTop: 14 }}>
-          No sales or inventory activity attributed to staff in this range.
+          No sales or inventory activity attributed to staff on this date.
         </T>
       ) : (
         <View style={{ marginTop: 10 }}>
@@ -376,7 +352,7 @@ function ChannelsTab({ data, currency, onUpgrade }: { data: any; currency: strin
       </T>
       {channels.length === 0 ? (
         <T w="semi" size={13} color={C.ink400}>
-          No channel data in this range.
+          No channel data on this date.
         </T>
       ) : (
         <BarList
