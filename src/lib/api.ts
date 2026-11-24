@@ -232,8 +232,28 @@ async function request(path: string, opts: RawOpts = {}): Promise<any> {
   throw new ApiError(0, "Something went wrong. Please try again.", "RETRY_EXHAUSTED");
 }
 
+async function requestText(path: string, opts: RawOpts = {}): Promise<string> {
+  const auth = opts.auth !== false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { status, json, text } = await rawFetch(path, opts);
+
+    if (status === 401 && auth && accessToken && !path.startsWith("/api/public/auth/")) {
+      const ok = await refreshSession();
+      if (ok) continue;
+      clearTokens();
+      emitSignedOut();
+      throw new ApiError(401, "Your session expired. Please sign in again.", "UNAUTHENTICATED");
+    }
+
+    if (status >= 400) throw toApiError(status, json, text);
+    return text;
+  }
+  throw new ApiError(0, "Something went wrong. Please try again.", "RETRY_EXHAUSTED");
+}
+
 export const api = {
   get: (path: string) => request(path, { method: "GET" }),
+  getText: (path: string) => requestText(path, { method: "GET" }),
   post: (path: string, body?: any) => request(path, { method: "POST", body: body ?? {} }),
   put: (path: string, body?: any) => request(path, { method: "PUT", body: body ?? {} }),
   patch: (path: string, body?: any) => request(path, { method: "PATCH", body: body ?? {} }),

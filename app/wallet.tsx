@@ -1,18 +1,33 @@
-import { useCallback, useEffect, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { api } from "../src/lib/api";
-import { apiErrorMessage, asList, fd, fm, rawNum, titleCase } from "../src/lib/format";
-import { Button, Card, ErrorState, Input, Money, Skeleton, StatusPill, T, toast, Sheet } from "../src/components/ui";
+import { apiErrorMessage, asList, fd, fdDateOnly, fm, pick, rawNum, titleCase, toISODate } from "../src/lib/format";
+import { Button, Card, Chip, ErrorState, Field, Input, Money, SearchBar, Skeleton, StatusPill, T, toast, Sheet } from "../src/components/ui";
+import { DateField, isValidDate } from "../src/components/expenses/DateField";
 import { C, shadow } from "../src/theme";
+
+type TransactionView = "all" | "wallet";
+
+function monthStart(): string {
+  const now = new Date();
+  return toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+function transactionDate(value?: any): string {
+  if (!value) return "—";
+  const text = String(value);
+  return isValidDate(text) ? fdDateOnly(text) : fd(text);
+}
 
 export default function Wallet() {
   const router = useRouter();
   const [wallet, setWallet] = useState<any | null>(null);
-  const [entries, setEntries] = useState<any[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +45,134 @@ export default function Wallet() {
   const [acctBusy, setAcctBusy] = useState(false);
   const [acctErr, setAcctErr] = useState("");
 
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [fromDate, setFromDate] = useState(() => monthStart());
+  const [toDate, setToDate] = useState(() => toISODate(new Date()));
+  const [appliedFrom, setAppliedFrom] = useState(() => monthStart());
+  const [appliedTo, setAppliedTo] = useState(() => toISODate(new Date()));
+  const [view, setView] = useState<TransactionView>("all");
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState({ direction: "", type: "", status: "", method: "", branch: "" });
+  const [filterDraft, setFilterDraft] = useState(filters);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [transactionsMore, setTransactionsMore] = useState(false);
+  const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailItem, setDetailItem] = useState<any>(null);
+  const [detail, setDetail] = useState<any>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const transactionReqId = useRef(0);
+
+  const loadTransactions = useCallback(async (cursor?: string | null) => {
+    const id = ++transactionReqId.current;
+    const append = !!cursor;
+    if (append) setTransactionsMore(true);
+    else setTransactionsLoading(true);
+    setTransactionsError(null);
+    try {
+      const qs = new URLSearchParams({ from: appliedFrom, to: appliedTo, view, limit: "25" });
+      if (appliedSearch.trim()) qs.set("search", appliedSearch.trim());
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value.trim()) qs.set(key, value.trim());
+      });
+      if (cursor) qs.set("cursor", cursor);
+      const res: any = await api.get(`/api/dashboard/transactions?${qs.toString()}`);
+      if (id !== transactionReqId.current) return;
+      const payload = res?.data ?? res;
+      const rows = asList(payload, "items", "transactions", "data", "results");
+      setTransactions((old) => append ? [...old, ...rows] : rows);
+      setNextCursor(pick<string>(payload, ["nextCursor", "after", "next"]) ?? pick<string>(res, ["nextCursor", "after", "next"]) ?? null);
+    } catch (e: any) {
+      if (id !== transactionReqId.current) return;
+      setTransactionsError(apiErrorMessage(e, "Couldn't load transactions."));
+      if (!append) setTransactions([]);
+    } finally {
+      if (id === transactionReqId.current) {
+        setTransactionsLoading(false);
+        setTransactionsMore(false);
+      }
+    }
+  }, [appliedFrom, appliedTo, view, appliedSearch, filters]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(search), 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    loadTransactions();
+  }, [loadTransactions]);
+
+  const transactionDateError = !isValidDate(fromDate)
+    ? "Choose a valid start date."
+    : !isValidDate(toDate)
+      ? "Choose a valid end date."
+      : fromDate > toDate
+        ? "Start date must be on or before end date."
+        : "";
+
+  const openTransaction = async (item: any) => {
+    const id = item?.id;
+    if (!id) return;
+    setDetailItem(item);
+    setDetailOpen(true);
+    setDetailBusy(true);
+    setDetail(null);
+    setDetailError("");
+    try {
+      const res = await api.get(`/api/dashboard/transactions/${encodeURIComponent(String(id))}`);
+      setDetail((res as any)?.transaction ?? (res as any)?.data?.transaction ?? (res as any)?.data ?? res);
+    } catch (e: any) {
+      setDetailError(apiErrorMessage(e, "Couldn't load transaction details."));
+    } finally {
+      setDetailBusy(false);
+    }
+  };
+
+  const exportTransactions = async () => {
+    if (!isValidDate(appliedFrom) || !isValidDate(appliedTo) || appliedFrom > appliedTo) {
+      toast.error("Choose a valid date range first.");
+      return;
+    }
+    setExportBusy(true);
+    try {
+      const qs = new URLSearchParams({ from: appliedFrom, to: appliedTo, view });
+      if (search.trim()) qs.set("search", search.trim());
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value.trim()) qs.set(key, value.trim());
+      });
+      const csv = await api.getText(`/api/dashboard/transactions/export.csv?${qs.toString()}`);
+      if (!csv.trim()) throw new Error("The statement is empty.");
+      const filename = `brikoh-transactions-${appliedFrom}-to-${appliedTo}.csv`;
+      if (Platform.OS === "web") {
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else {
+        const file = new File(Paths.cache, filename);
+        await file.write(csv);
+        if (!(await Sharing.isAvailableAsync())) throw new Error("Sharing isn't available on this device.");
+        await Sharing.shareAsync(file.uri, { mimeType: "text/csv", dialogTitle: "Export transactions", UTI: "public.comma-separated-values-text" });
+      }
+      toast.success("Transaction statement exported.");
+    } catch (e: any) {
+      toast.error(apiErrorMessage(e, "Couldn't export the transaction statement."));
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     setError(null);
@@ -37,7 +180,6 @@ export default function Wallet() {
       const res: any = await api.get("/api/dashboard/wallet");
       const w = res?.wallet ?? res;
       setWallet(w);
-      setEntries(Array.isArray(res?.recentEntries) ? res.recentEntries : Array.isArray(w?.recentEntries) ? w.recentEntries : []);
     } catch (e: any) {
       setError(apiErrorMessage(e, "Couldn't load your wallet."));
       setWallet(null);
@@ -136,7 +278,7 @@ export default function Wallet() {
         <ScrollView
           contentContainerStyle={{ padding: 16, paddingBottom: 30, gap: 12 }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} tintColor={C.brand} onRefresh={() => { setRefreshing(true); load(true); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} tintColor={C.brand} onRefresh={() => { setRefreshing(true); load(true); loadTransactions(); }} />}
         >
           {loading && !wallet ? (
             <>
@@ -179,38 +321,66 @@ export default function Wallet() {
                 Online sales paid through Paystack land here. Cash, transfer and credit sales never touch this balance.
               </T>
 
-              <T w="display" size={17} style={{ marginTop: 8 }}>
-                Activity
-              </T>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                <T w="display" size={17}>Transactions</T>
+                <Button label="Export CSV" icon="download-outline" variant="outline" small onPress={exportTransactions} busy={exportBusy} />
+              </View>
+              <Card style={{ padding: 14, gap: 12 }}>
+                <DateField label="From" value={fromDate} onChange={setFromDate} quick />
+                <DateField label="To" value={toDate} onChange={setToDate} quick />
+                {transactionDateError ? <T w="semi" size={12} color={C.danger500}>{transactionDateError}</T> : null}
+                <Button
+                  label="Apply date range"
+                  onPress={() => { setAppliedFrom(fromDate); setAppliedTo(toDate); }}
+                  disabled={!!transactionDateError || transactionsLoading}
+                  small
+                />
+              </Card>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Chip label="All transactions" on={view === "all"} onPress={() => setView("all")} />
+                <Chip label="Wallet only" on={view === "wallet"} onPress={() => setView("wallet")} />
+                <Button label="Filters" icon="options-outline" variant="outline" small onPress={() => { setFilterDraft(filters); setFiltersOpen(true); }} />
+              </View>
+              <SearchBar value={search} onChangeText={setSearch} placeholder="Search transactions" />
               <Card style={{ paddingHorizontal: 14 }}>
-                {entries.length === 0 ? (
+                {transactionsLoading ? (
+                  <View style={{ paddingVertical: 10, gap: 10 }}><Skeleton h={54} r={14} /><Skeleton h={54} r={14} /></View>
+                ) : transactionsError ? (
+                  <ErrorState message={transactionsError} onRetry={() => loadTransactions()} />
+                ) : transactions.length === 0 ? (
                   <T w="semi" size={13} color={C.ink400} style={{ paddingVertical: 24, textAlign: "center" }}>
-                    Credits from online sales and debits from withdrawals appear here.
+                    No transactions found for this date range.
                   </T>
                 ) : (
-                  entries.slice(0, 15).map((e, i) => {
-                    const credit = String(e.type || "").toUpperCase() === "CREDIT";
+                  transactions.map((transaction, i) => {
+                    const direction = String(transaction.direction || "").toUpperCase();
+                    const credit = ["CREDIT", "IN", "INBOUND"].includes(direction);
+                    const title = transaction.description || transaction.title || transaction.source || transaction.type || "Transaction";
+                    const subtitle = [transactionDate(transaction.createdAt || transaction.date), transaction.method ? titleCase(transaction.method) : null, transaction.branch?.name || transaction.branchName].filter(Boolean).join(" · ");
                     return (
-                      <View key={e.id || i} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderTopWidth: i ? 1 : 0, borderTopColor: C.cream100 }}>
+                      <Pressable
+                        key={String(transaction.id || i)}
+                        onPress={() => openTransaction(transaction)}
+                        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderTopWidth: i ? 1 : 0, borderTopColor: C.cream100, opacity: pressed ? 0.75 : 1 })}
+                      >
                         <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: credit ? C.leaf100 : C.cream100, alignItems: "center", justifyContent: "center" }}>
                           <Ionicons name={credit ? "arrow-down" : "arrow-up"} size={17} color={credit ? C.leaf500 : C.ink500} />
                         </View>
-                        <View style={{ flex: 1 }}>
-                          <T w="bold" size={13.5}>
-                            {titleCase(String(e.source || "movement").replace(/_/g, " "))}
-                          </T>
-                          <T w="regular" size={11.5} color={C.ink400}>
-                            {fd(e.createdAt)}
-                          </T>
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <T w="bold" size={13.5} numberOfLines={1}>{titleCase(String(title).replace(/_/g, " "))}</T>
+                          <T w="regular" size={11} color={C.ink400} numberOfLines={1}>{subtitle}</T>
                         </View>
-                        <T w="extra" size={13.5} color={credit ? C.leaf500 : C.ink700}>
-                          {credit ? "+" : "−"}
-                          {fm(e.amount, currency)}
-                        </T>
-                      </View>
+                        <View style={{ alignItems: "flex-end", gap: 4 }}>
+                          <T w="extra" size={13} color={credit ? C.leaf500 : C.ink700}>{credit ? "+" : "−"}{fm(Math.abs(rawNum(transaction.amount)), transaction.currency || currency)}</T>
+                          {transaction.status ? <StatusPill status={transaction.status} /> : null}
+                        </View>
+                      </Pressable>
                     );
                   })
                 )}
+                {!transactionsLoading && !transactionsError && nextCursor ? (
+                  <Button label="Load more" variant="outline" small busy={transactionsMore} onPress={() => loadTransactions(nextCursor)} style={{ marginVertical: 10 }} />
+                ) : null}
               </Card>
 
               <T w="display" size={17} style={{ marginTop: 8 }}>
@@ -306,6 +476,77 @@ export default function Wallet() {
             </T>
           ) : null}
         </ScrollView>
+      </Sheet>
+
+      <Sheet
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        title="Transaction filters"
+        footer={
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Button
+              label="Clear"
+              variant="outline"
+              small
+              style={{ flex: 1 }}
+              onPress={() => {
+                const empty = { direction: "", type: "", status: "", method: "", branch: "" };
+                setFilterDraft(empty);
+                setFilters(empty);
+                setFiltersOpen(false);
+              }}
+            />
+            <Button label="Apply filters" small style={{ flex: 1.4 }} onPress={() => { setFilters(filterDraft); setFiltersOpen(false); }} />
+          </View>
+        }
+      >
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 18, gap: 12, paddingBottom: 8 }}>
+          <Field label="Direction" hint="Example: credit or debit">
+            <Input value={filterDraft.direction} onChangeText={(direction) => setFilterDraft({ ...filterDraft, direction })} placeholder="Any direction" autoCapitalize="none" />
+          </Field>
+          <Field label="Type">
+            <Input value={filterDraft.type} onChangeText={(type) => setFilterDraft({ ...filterDraft, type })} placeholder="Any type" autoCapitalize="none" />
+          </Field>
+          <Field label="Status">
+            <Input value={filterDraft.status} onChangeText={(status) => setFilterDraft({ ...filterDraft, status })} placeholder="Any status" autoCapitalize="none" />
+          </Field>
+          <Field label="Method">
+            <Input value={filterDraft.method} onChangeText={(method) => setFilterDraft({ ...filterDraft, method })} placeholder="Any method" autoCapitalize="none" />
+          </Field>
+          <Field label="Branch" hint="Branch ID">
+            <Input value={filterDraft.branch} onChangeText={(branch) => setFilterDraft({ ...filterDraft, branch })} placeholder="Any branch" autoCapitalize="none" />
+          </Field>
+        </ScrollView>
+      </Sheet>
+
+      <Sheet open={detailOpen} onClose={() => setDetailOpen(false)} title="Transaction details">
+        {detailBusy ? (
+          <View style={{ paddingHorizontal: 18, paddingBottom: 20, gap: 10 }}><Skeleton h={52} r={14} /><Skeleton h={52} r={14} /></View>
+        ) : detailError ? (
+          <ErrorState message={detailError} onRetry={() => detailItem && openTransaction(detailItem)} />
+        ) : detail ? (
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 18 }}>
+            <Card style={{ paddingHorizontal: 14 }}>
+              {[
+                ["ID", detail.id],
+                ["Type", detail.type ? titleCase(String(detail.type).replace(/_/g, " ")) : null],
+                ["Direction", detail.direction ? titleCase(detail.direction) : null],
+                ["Status", detail.status ? titleCase(detail.status) : null],
+                ["Amount", detail.amount != null ? fm(detail.amount, detail.currency || currency) : null],
+                ["Method", detail.method ? titleCase(detail.method) : null],
+                ["Reference", detail.reference],
+                ["Description", detail.description],
+                ["Branch", detail.branch?.name || detail.branchName],
+                ["Date", transactionDate(detail.createdAt || detail.date)],
+              ].filter(([, value]) => value != null && value !== "").map(([label, value], index) => (
+                <View key={String(label)} style={{ paddingVertical: 12, borderTopWidth: index ? 1 : 0, borderTopColor: C.cream100, gap: 3 }}>
+                  <T w="semi" size={11} color={C.ink400}>{label}</T>
+                  <T w="bold" size={13} selectable>{String(value)}</T>
+                </View>
+              ))}
+            </Card>
+          </ScrollView>
+        ) : null}
       </Sheet>
     </SafeAreaView>
   );
