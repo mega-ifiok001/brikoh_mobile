@@ -9,7 +9,7 @@ import { Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800Ext
 import { BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold } from "@expo-google-fonts/bricolage-grotesque";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import { ThemeBoundary, ThemeProvider, useTheme } from "../src/context/ThemeContext";
-import { ToastHost } from "../src/components/ui";
+import { ToastHost, toast } from "../src/components/ui";
 import { BrandSplash } from "../src/components/Loader";
 import { C, themeSwitch } from "../src/theme";
 import { usePushNotifications } from "../src/lib/notifications";
@@ -23,7 +23,7 @@ const MIN_SPLASH_MS = 3200; // first launch only: long enough for the logo to ro
 const RETURNING_SPLASH_MS = 1200; // every launch after that
 
 function Gate() {
-  const { loading, isAuthed, isOnboarded } = useAuth();
+  const { loading, isAuthed, isOnboarded, sessionExpired } = useAuth();
   const { resolved } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
@@ -57,6 +57,10 @@ function Gate() {
   useEffect(() => {
     if (!themeSwitch.pending && pathname && pathname !== "/") themeSwitch.path = pathname;
   }, [pathname]);
+
+  useEffect(() => {
+    if (sessionExpired) toast.info("Your session expired. Please sign in again. Your current unsaved work may need to be re-entered.");
+  }, [sessionExpired]);
 
   if (loading || !minDone) {
     return (

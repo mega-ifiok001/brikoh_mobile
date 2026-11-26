@@ -64,15 +64,15 @@ export function clearTokens() {
 }
 
 // ---- tiny "signed out" event bus (replaces window events from the web app) --
-const signedOutListeners = new Set<() => void>();
-export function onSignedOut(fn: () => void) {
+const signedOutListeners = new Set<(sessionExpired: boolean) => void>();
+export function onSignedOut(fn: (sessionExpired: boolean) => void) {
   signedOutListeners.add(fn);
   return () => {
     signedOutListeners.delete(fn);
   };
 }
-function emitSignedOut() {
-  signedOutListeners.forEach((f) => f());
+function emitSignedOut(sessionExpired = false) {
+  signedOutListeners.forEach((fn) => fn(sessionExpired));
 }
 
 // Tokens may arrive under several shapes depending on endpoint.
@@ -86,39 +86,61 @@ export function extractTokens(res: any): { at?: string; rt?: string } {
   return { at: at || undefined, rt: rt || undefined };
 }
 
-let refreshPromise: Promise<boolean> | null = null;
+let refreshPromise: Promise<RefreshOutcome> | null = null;
+let lastAuthFailureAt = 0;
+const AUTH_FAILURE_COOLDOWN_MS = 2_000;
 
-function doRefresh(): Promise<boolean> {
-  const rt = refreshToken;
-  if (!rt) return Promise.resolve(false);
-  return fetch(`${API_BASE}/api/public/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken: rt }),
-  })
-    .then(async (r) => {
-      let j: any = null;
-      try {
-        j = await r.json();
-      } catch {
-        /* no body */
-      }
-      if (!r.ok) return false;
-      const { at, rt: nrt } = extractTokens(j);
-      if (!at) return false;
-      setTokens(at, nrt ?? refreshToken);
-      return true;
-    })
-    .catch(() => false);
+export type RefreshOutcome = "refreshed" | "unauthorized" | "unavailable";
+
+function decodeExpiry(token: string | null): number | null {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
+    const claims = JSON.parse(decoded);
+    return typeof claims.exp === "number" ? claims.exp * 1000 : null;
+  } catch { return null; }
 }
 
-export function refreshSession(): Promise<boolean> {
-  if (!refreshPromise) {
-    refreshPromise = doRefresh().finally(() => {
-      refreshPromise = null;
+async function doRefresh(): Promise<RefreshOutcome> {
+  const rt = refreshToken;
+  if (!rt) return "unauthorized";
+  try {
+    const response = await fetch(`${API_BASE}/api/public/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: rt }),
     });
-  }
+    let json: any = null;
+    try { json = await response.json(); } catch { /* optional response body */ }
+    if (response.status === 401 || response.status === 403) return "unauthorized";
+    if (!response.ok) return "unavailable";
+    const { at, rt: nextRefreshToken } = extractTokens(json);
+    if (!at || !nextRefreshToken) return "unavailable";
+    setTokens(at, nextRefreshToken);
+    return "refreshed";
+  } catch { return "unavailable"; }
+}
+
+export function refreshSession(): Promise<RefreshOutcome> {
+  if (!refreshPromise) refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
   return refreshPromise;
+}
+
+/** Renew before expiry when possible; a network outage must never discard credentials. */
+export async function keepSessionFresh(): Promise<RefreshOutcome> {
+  if (!accessToken || !refreshToken) return "unauthorized";
+  const expiresAt = decodeExpiry(accessToken);
+  if (expiresAt !== null && expiresAt - Date.now() > 90_000) return "refreshed";
+  const outcome = await refreshSession();
+  if (outcome === "unauthorized" && Date.now() - lastAuthFailureAt >= AUTH_FAILURE_COOLDOWN_MS) {
+    lastAuthFailureAt = Date.now();
+    clearTokens();
+    emitSignedOut(true);
+  }
+  return outcome;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -218,11 +240,14 @@ async function request(path: string, opts: RawOpts = {}): Promise<any> {
     const { status, json, text } = await rawFetch(path, opts);
 
     if (status === 401 && auth && accessToken && !path.startsWith("/api/public/auth/")) {
-      const ok = await refreshSession();
-      if (ok) continue; // retry with the fresh token
-      clearTokens();
-      emitSignedOut();
-      throw new ApiError(401, "Your session expired. Please sign in again.", "UNAUTHENTICATED");
+      const outcome = await refreshSession();
+      if (outcome === "refreshed") continue;
+      if (outcome === "unauthorized") {
+        clearTokens();
+        emitSignedOut(true);
+        throw new ApiError(401, "Your session expired. Please sign in again. Your saved work is still on this device.", "UNAUTHENTICATED");
+      }
+      throw new ApiError(0, "You’re offline or the server is unavailable. Your session and unsent work are still saved; reconnect and try again.", "REFRESH_UNAVAILABLE");
     }
 
     if (status === 204) return null;
@@ -238,11 +263,14 @@ async function requestText(path: string, opts: RawOpts = {}): Promise<string> {
     const { status, json, text } = await rawFetch(path, opts);
 
     if (status === 401 && auth && accessToken && !path.startsWith("/api/public/auth/")) {
-      const ok = await refreshSession();
-      if (ok) continue;
-      clearTokens();
-      emitSignedOut();
-      throw new ApiError(401, "Your session expired. Please sign in again.", "UNAUTHENTICATED");
+      const outcome = await refreshSession();
+      if (outcome === "refreshed") continue;
+      if (outcome === "unauthorized") {
+        clearTokens();
+        emitSignedOut(true);
+        throw new ApiError(401, "Your session expired. Please sign in again. Your saved work is still on this device.", "UNAUTHENTICATED");
+      }
+      throw new ApiError(0, "You’re offline or the server is unavailable. Your session and unsent work are still saved; reconnect and try again.", "REFRESH_UNAVAILABLE");
     }
 
     if (status >= 400) throw toApiError(status, json, text);
