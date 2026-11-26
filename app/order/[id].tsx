@@ -7,7 +7,8 @@ import { useAuth } from "../../src/context/AuthContext";
 import { api } from "../../src/lib/api";
 import { apiErrorMessage, fd, fdt, fm, rawNum, titleCase } from "../../src/lib/format";
 import { shareReceiptPdf, shareReceiptText, type ReceiptData } from "../../src/lib/receipt";
-import { Button, Card, ErrorState, Money, Skeleton, StatusPill, T, toast } from "../../src/components/ui";
+import { Button, Card, ErrorState, Field, Input, Money, Pill, Sheet, Skeleton, StatusPill, T, toast } from "../../src/components/ui";
+import { ConfirmSheet } from "../../src/components/kit";
 import { C } from "../../src/theme";
 
 export default function OrderDetail() {
@@ -21,7 +22,16 @@ export default function OrderDetail() {
   const [repayments, setRepayments] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"confirm" | "reject" | null>(null);
-    const [shareBusy, setShareBusy] = useState<"text" | "pdf" | null>(null);
+  const [shareBusy, setShareBusy] = useState<"text" | "pdf" | null>(null);
+  const [fulfillment, setFulfillment] = useState<any>(null);
+  const [fulfillmentError, setFulfillmentError] = useState("");
+  const [fulfillmentBusy, setFulfillmentBusy] = useState(false);
+  const [shipbubbleBusy, setShipbubbleBusy] = useState<"book" | "cancel" | null>(null);
+  const [shipbubbleCancelConfirm, setShipbubbleCancelConfirm] = useState(false);
+  const [fulfillmentSheet, setFulfillmentSheet] = useState(false);
+  const [nextFulfillmentStatus, setNextFulfillmentStatus] = useState("");
+  const [fulfillmentForm, setFulfillmentForm] = useState({ courierName: "", courierPhone: "", shipmentReference: "", trackingUrl: "", note: "" });
+  const d = order?.delivery;
 
   const apply = (res: any) => {
     setOrder(res?.order ?? null);
@@ -32,7 +42,22 @@ export default function OrderDetail() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      apply(await api.get(`/api/dashboard/orders/${id}`));
+      const res: any = await api.get(`/api/dashboard/orders/${id}`);
+      apply(res);
+      const loadedOrder = res?.order;
+      if (loadedOrder?.delivery) {
+        try {
+          const f: any = await api.get(`/api/dashboard/orders/${id}/fulfillment`);
+          setFulfillment(f?.fulfillment ?? f);
+          setFulfillmentError("");
+        } catch (e: any) {
+          setFulfillment(null);
+          setFulfillmentError(apiErrorMessage(e, "Couldn't load fulfilment status."));
+        }
+      } else {
+        setFulfillment(null);
+        setFulfillmentError("");
+      }
     } catch (e: any) {
       setError(apiErrorMessage(e, "Couldn't open that order."));
     }
@@ -73,6 +98,107 @@ export default function OrderDetail() {
     }
   };
 
+  const fulfillmentTransitions: Record<string, string[]> = {
+    ORDER_RECEIVED: ["CONFIRMED", "CANCELLED"],
+    CONFIRMED: ["PREPARING", "CANCELLED"],
+    PREPARING: d?.kind === "PICKUP" ? ["READY_FOR_PICKUP", "CANCELLED"] : ["READY_FOR_DISPATCH", "CANCELLED"],
+    READY_FOR_DISPATCH: ["DISPATCHED", "DELIVERY_FAILED", "CANCELLED"],
+    DISPATCHED: ["DELIVERED", "DELIVERY_FAILED"],
+    DELIVERY_FAILED: ["READY_FOR_DISPATCH", "CANCELLED"],
+    READY_FOR_PICKUP: ["COLLECTED", "CANCELLED"],
+    DELIVERED: [],
+    COLLECTED: [],
+    CANCELLED: [],
+  };
+  const availableFulfillmentStatuses = fulfillment?.provider === "shipbubble"
+    ? fulfillment?.status === "ORDER_RECEIVED" ? ["CONFIRMED"] : fulfillment?.status === "CONFIRMED" ? ["PREPARING"] : []
+    : fulfillmentTransitions[fulfillment?.status] || [];
+
+  const openFulfillmentUpdate = (status: string) => {
+    setNextFulfillmentStatus(status);
+    setFulfillmentForm({
+      courierName: fulfillment?.courierName || "",
+      courierPhone: fulfillment?.courierPhone || "",
+      shipmentReference: fulfillment?.shipmentReference || "",
+      trackingUrl: fulfillment?.trackingUrl || "",
+      note: "",
+    });
+    setFulfillmentSheet(true);
+  };
+
+  const saveFulfillment = async () => {
+    if (!nextFulfillmentStatus) return;
+    const trackingUrl = fulfillmentForm.trackingUrl.trim();
+    if (trackingUrl && !/^https:\/\//i.test(trackingUrl)) return toast.error("Tracking links must start with https://.");
+    setFulfillmentBusy(true);
+    try {
+      const body: any = { status: nextFulfillmentStatus };
+      if (fulfillment?.provider !== "shipbubble") {
+        body.courierName = fulfillmentForm.courierName.trim() || null;
+        body.courierPhone = fulfillmentForm.courierPhone.trim() || null;
+        body.shipmentReference = fulfillmentForm.shipmentReference.trim() || null;
+        body.trackingUrl = trackingUrl || null;
+      }
+      if (fulfillmentForm.note.trim()) body.note = fulfillmentForm.note.trim();
+      const key = `${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+      const res: any = await api.patch(`/api/dashboard/orders/${id}/fulfillment`, body, { "Idempotency-Key": key });
+      setFulfillment(res?.fulfillment ?? res);
+      setFulfillmentError("");
+      setFulfillmentSheet(false);
+      toast.success(`Fulfilment updated to ${titleCase(nextFulfillmentStatus.replace(/_/g, " "))}.`);
+    } catch (e: any) {
+      toast.error(apiErrorMessage(e, "Couldn't update fulfilment.", {
+        ORDER_NOT_PAID: "Confirm payment before advancing fulfilment.",
+        FULFILLMENT_NOT_CONFIGURED: "This order has no delivery or pickup option.",
+        FULFILLMENT_TRANSITION_INVALID: "That fulfilment step is no longer available. Refresh and try again.",
+        FULFILLMENT_STATUS_INVALID: "That status doesn't match this order's delivery or pickup option.",
+        FULFILLMENT_CHANGED: "Fulfilment changed elsewhere. Refresh the order and try again.",
+        PROVIDER_MANAGED_FULFILLMENT: "This shipment is managed by its delivery provider.",
+      }));
+      load();
+    } finally {
+      setFulfillmentBusy(false);
+    }
+  };
+
+  const bookShipbubble = async () => {
+    setShipbubbleBusy("book");
+    try {
+      await api.post(`/api/dashboard/orders/${id}/shipbubble/book`);
+      await load();
+      toast.success("Shipbubble shipment booked.");
+    } catch (e: any) {
+      toast.error(apiErrorMessage(e, "Couldn't book the Shipbubble shipment.", {
+        ORDER_NOT_PAID: "Confirm payment before booking shipment.",
+        SHIPBUBBLE_NOT_SELECTED: "This order does not use Shipbubble delivery.",
+        SHIPBUBBLE_QUOTE_MISSING: "The order has no saved Shipbubble quote.",
+        SHIPBUBBLE_BOOKING_PENDING: "A booking attempt needs reconciliation. Check again before retrying.",
+        SHIPBUBBLE_BOOKING_FAILED: "Shipbubble couldn't book this shipment.",
+      }));
+      load();
+    } finally {
+      setShipbubbleBusy(null);
+    }
+  };
+
+  const cancelShipbubble = async () => {
+    setShipbubbleBusy("cancel");
+    try {
+      const res: any = await api.post(`/api/dashboard/orders/${id}/shipbubble/cancel`);
+      setShipbubbleCancelConfirm(false);
+      await load();
+      toast.success(res?.refundIssued === false ? "Shipment cancelled. No payment refund was issued." : "Shipment cancelled.");
+    } catch (e: any) {
+      toast.error(apiErrorMessage(e, "Couldn't cancel the Shipbubble shipment.", {
+        SHIPBUBBLE_CANCELLATION_UNAVAILABLE: "This shipment can no longer be cancelled before dispatch.",
+        SHIPBUBBLE_CANCELLATION_FAILED: "Shipbubble couldn't cancel this shipment; it may already be in transit.",
+      }));
+      load();
+    } finally {
+      setShipbubbleBusy(null);
+    }
+  };
+
     const shareReceipt = async (kind: "text" | "pdf") => {
     if (!order) return;
     const data: ReceiptData = {
@@ -102,7 +228,6 @@ export default function OrderDetail() {
   };
 
   const awaiting = order?.status === "AWAITING_PAYMENT";
-  const d = order?.delivery;
   const balance = order?.balanceDue ?? (order?.total != null && order?.amountPaid != null ? rawNum(order.total) - rawNum(order.amountPaid) : null);
 
   return (
@@ -164,7 +289,7 @@ export default function OrderDetail() {
             {d && (
               <>
                 <T w="display" size={17}>
-                  Delivery
+                  {d.kind === "PICKUP" ? "Pickup" : "Delivery"}
                 </T>
                 <Card style={{ paddingHorizontal: 16, paddingVertical: 6 }}>
                   <Row label="Option" value={d.optionName || "—"} />
@@ -174,6 +299,95 @@ export default function OrderDetail() {
                   {d.phone ? <Row label="Phone" value={d.phone} /> : null}
                   {d.instructions ? <Row label="Notes" value={d.instructions} /> : null}
                 </Card>
+
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                  <T w="display" size={17}>Fulfilment</T>
+                  {fulfillment?.status ? <Pill tone={fulfillment.status === "DELIVERED" || fulfillment.status === "COLLECTED" ? "green" : fulfillment.status === "CANCELLED" ? "danger" : "brand"}>{titleCase(String(fulfillment.status).replace(/_/g, " "))}</Pill> : null}
+                </View>
+                <Card style={{ padding: 16, gap: 10 }}>
+                  {fulfillmentError ? (
+                    <View style={{ gap: 8 }}>
+                      <T w="semi" size={12.5} color={C.danger500}>{fulfillmentError}</T>
+                      <Button label="Retry fulfilment status" variant="outline" small onPress={load} />
+                    </View>
+                  ) : !fulfillment ? (
+                    <Skeleton h={54} r={14} />
+                  ) : (
+                    <>
+                      {fulfillment.provider ? <T w="regular" size={11.5} color={C.ink400}>Provider: {titleCase(fulfillment.provider)}</T> : null}
+                      {fulfillment.courierName ? <Row label="Courier" value={fulfillment.courierName} /> : null}
+                      {fulfillment.courierPhone ? (
+                        <Pressable onPress={() => Linking.openURL(`tel:${fulfillment.courierPhone}`)}>
+                          <Row label="Courier phone" value={fulfillment.courierPhone} />
+                        </Pressable>
+                      ) : null}
+                      {fulfillment.shipmentReference ? <Row label="Shipment reference" value={fulfillment.shipmentReference} /> : null}
+                      {fulfillment.trackingUrl ? (
+                        <Pressable onPress={() => Linking.openURL(fulfillment.trackingUrl)}>
+                          <Row label="Tracking link" value="Open tracking page" />
+                        </Pressable>
+                      ) : null}
+                      {order.status !== "PAID" ? (
+                        <T w="semi" size={12} color={C.ink400}>Confirm payment before advancing fulfilment.</T>
+                      ) : fulfillment.provider === "shipbubble" && fulfillment.status === "PREPARING" ? (
+                        <View style={{ gap: 8, marginTop: 4 }}>
+                          <T w="regular" size={12} color={C.ink400}>The order is prepared. Book the saved Shipbubble quote to dispatch it.</T>
+                          <Button label="Book Shipbubble shipment" icon="bicycle-outline" onPress={bookShipbubble} busy={shipbubbleBusy === "book"} />
+                        </View>
+                      ) : fulfillment.provider === "shipbubble" && fulfillment.status === "READY_FOR_DISPATCH" ? (
+                        <View style={{ gap: 8, marginTop: 4 }}>
+                          <T w="regular" size={12} color={C.ink400}>Shipbubble will send status updates as the shipment moves.</T>
+                          <Button label="Cancel shipment" icon="close-circle-outline" variant="danger" small onPress={() => setShipbubbleCancelConfirm(true)} busy={shipbubbleBusy === "cancel"} />
+                        </View>
+                      ) : fulfillment.provider === "shipbubble" && availableFulfillmentStatuses.length > 0 ? (
+                        <View style={{ gap: 8, marginTop: 4 }}>
+                          <T w="bold" size={12} color={C.ink500}>Order preparation</T>
+                          {availableFulfillmentStatuses.map((status) => (
+                            <Button key={status} label={titleCase(status.replace(/_/g, " "))} icon="arrow-forward-outline" variant="outline" small onPress={() => openFulfillmentUpdate(status)} />
+                          ))}
+                        </View>
+                      ) : fulfillment.provider === "shipbubble" ? (
+                        <T w="semi" size={12} color={C.ink400}>Shipbubble shipment updates are managed by the provider.</T>
+                      ) : availableFulfillmentStatuses.length > 0 ? (
+                        <View style={{ gap: 8, marginTop: 4 }}>
+                          <T w="bold" size={12} color={C.ink500}>Update fulfilment status</T>
+                          {availableFulfillmentStatuses.map((status) => (
+                            <Button
+                              key={status}
+                              label={titleCase(status.replace(/_/g, " "))}
+                              icon={status === "CANCELLED" ? "close-circle-outline" : "arrow-forward-outline"}
+                              variant={status === "CANCELLED" ? "danger" : "outline"}
+                              small
+                              onPress={() => openFulfillmentUpdate(status)}
+                            />
+                          ))}
+                        </View>
+                      ) : (
+                        <T w="semi" size={12} color={C.ink400}>This fulfilment is complete.</T>
+                      )}
+                    </>
+                  )}
+                </Card>
+
+                {Array.isArray(fulfillment?.events) && fulfillment.events.length > 0 ? (
+                  <>
+                    <T w="display" size={16}>Fulfilment history</T>
+                    <Card style={{ paddingHorizontal: 14 }}>
+                      {fulfillment.events.map((event: any, index: number) => (
+                        <View key={event.id || index} style={{ flexDirection: "row", gap: 10, paddingVertical: 12, borderTopWidth: index ? 1 : 0, borderTopColor: C.cream100 }}>
+                          <View style={{ width: 9, height: 9, borderRadius: 6, backgroundColor: C.brand, marginTop: 5 }} />
+                          <View style={{ flex: 1, gap: 3 }}>
+                            <T w="bold" size={13}>{titleCase(String(event.status || "").replace(/_/g, " "))}</T>
+                            <T w="regular" size={11.5} color={C.ink400}>{fdt(event.createdAt)}{event.source ? ` · ${titleCase(event.source)}` : ""}</T>
+                            {event.note ? <T w="regular" size={12} color={C.ink500}>{event.note}</T> : null}
+                            {event.courierName ? <T w="regular" size={11.5} color={C.ink400}>Courier: {event.courierName}</T> : null}
+                            {event.shipmentReference ? <T w="regular" size={11.5} color={C.ink400}>Reference: {event.shipmentReference}</T> : null}
+                          </View>
+                        </View>
+                      ))}
+                    </Card>
+                  </>
+                ) : null}
               </>
             )}
 
@@ -256,6 +470,45 @@ export default function OrderDetail() {
           )}
         </>
       )}
+      <Sheet
+        open={fulfillmentSheet}
+        onClose={() => setFulfillmentSheet(false)}
+        title={`Update to ${titleCase(nextFulfillmentStatus.replace(/_/g, " "))}`}
+        footer={<Button label={nextFulfillmentStatus === "CANCELLED" ? "Confirm fulfilment cancellation" : "Save update"} variant={nextFulfillmentStatus === "CANCELLED" ? "danger" : "primary"} onPress={saveFulfillment} busy={fulfillmentBusy} />}
+      >
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 18, gap: 12, paddingBottom: 10 }}>
+          {nextFulfillmentStatus === "CANCELLED" ? (
+            <Card style={{ padding: 12, backgroundColor: C.warnBg, borderColor: C.warnBorder }}>
+              <T w="semi" size={12.5} color={C.gold600}>This cancels fulfilment only. It does not refund or change the payment.</T>
+            </Card>
+          ) : null}
+          <Field label="Courier name" hint="Optional">
+            <Input value={fulfillmentForm.courierName} onChangeText={(v) => setFulfillmentForm({ ...fulfillmentForm, courierName: v })} placeholder="Courier or rider name" maxLength={200} />
+          </Field>
+          <Field label="Courier phone" hint="Optional">
+            <Input value={fulfillmentForm.courierPhone} onChangeText={(v) => setFulfillmentForm({ ...fulfillmentForm, courierPhone: v })} placeholder="+234…" keyboardType="phone-pad" maxLength={30} />
+          </Field>
+          <Field label="Shipment reference" hint="Optional">
+            <Input value={fulfillmentForm.shipmentReference} onChangeText={(v) => setFulfillmentForm({ ...fulfillmentForm, shipmentReference: v })} placeholder="Rider or package reference" maxLength={200} />
+          </Field>
+          <Field label="Tracking URL" hint="Optional · must start with https://">
+            <Input value={fulfillmentForm.trackingUrl} onChangeText={(v) => setFulfillmentForm({ ...fulfillmentForm, trackingUrl: v })} placeholder="https://…" autoCapitalize="none" keyboardType="url" maxLength={2000} />
+          </Field>
+          <Field label="Update note" hint="Optional · added to fulfilment history">
+            <Input value={fulfillmentForm.note} onChangeText={(v) => setFulfillmentForm({ ...fulfillmentForm, note: v })} placeholder="Add a note for this status change" multiline maxLength={500} style={{ height: 88, alignItems: "flex-start", paddingVertical: 10 }} />
+          </Field>
+        </ScrollView>
+      </Sheet>
+      <ConfirmSheet
+        open={shipbubbleCancelConfirm}
+        title="Cancel Shipbubble shipment?"
+        message="This cancels the courier shipment before dispatch. It does not refund or change the customer's payment."
+        confirmLabel="Cancel shipment"
+        danger
+        busy={shipbubbleBusy === "cancel"}
+        onConfirm={cancelShipbubble}
+        onClose={() => setShipbubbleCancelConfirm(false)}
+      />
     </SafeAreaView>
   );
 }

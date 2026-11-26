@@ -247,6 +247,11 @@ export default function Orders() {
                   {o.paymentMethod ? (
                     <Pill>{titleCase(o.paymentMethod)}</Pill>
                   ) : null}
+                  {o.fulfillment?.status ? (
+                    <Pill tone={o.fulfillment.status === "DELIVERED" || o.fulfillment.status === "COLLECTED" ? "green" : o.fulfillment.status === "CANCELLED" ? "danger" : "brand"}>
+                      {titleCase(String(o.fulfillment.status).replace(/_/g, " "))}
+                    </Pill>
+                  ) : null}
                 </View>
               </Card>
             );

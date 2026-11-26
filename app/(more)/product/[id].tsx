@@ -41,6 +41,7 @@ interface FormState {
   price: string;
   costPrice: string;
   discountPrice: string;
+  shippingWeightKg: string;
   description: string;
   categoryId: string;
   unitId: string;
@@ -57,6 +58,7 @@ const BLANK: FormState = {
   price: "",
   costPrice: "",
   discountPrice: "",
+  shippingWeightKg: "",
   description: "",
   categoryId: "",
   unitId: "",
@@ -78,6 +80,7 @@ function formFromProduct(x: any): FormState {
     price: x.price != null ? String(x.price) : "",
     costPrice: x.costPrice != null ? String(x.costPrice) : "",
     discountPrice: x.discountPrice != null ? String(x.discountPrice) : "",
+    shippingWeightKg: x.shippingWeightKg != null ? String(x.shippingWeightKg) : "",
     description: x.description || "",
     categoryId: x.categoryId || x.category?.id || "",
     unitId: x.unitId || x.unit?.id || "",
@@ -174,6 +177,10 @@ export default function ProductScreen() {
     if (discountPrice != null && (!Number.isFinite(discountPrice) || discountPrice < 0 || discountPrice >= price || discountPrice > MAX_MONEY || !money2(discountPrice))) {
       return setFormErr("Discount price must be lower than the price and have at most 2 decimal places.");
     }
+    const shippingWeightKg = form.shippingWeightKg.trim() ? Number(form.shippingWeightKg) : null;
+    if (shippingWeightKg != null && (!Number.isFinite(shippingWeightKg) || shippingWeightKg < 0.001 || shippingWeightKg > 99999.999 || !/^\d+(?:\.\d{1,3})?$/.test(form.shippingWeightKg.trim()))) {
+      return setFormErr("Shipping weight must be between 0.001 and 99,999.999 kg with up to 3 decimal places.");
+    }
     const description = form.description.trim();
     if (description.length > MAX_DESCRIPTION) return setFormErr(`Description must be ${MAX_DESCRIPTION} characters or fewer.`);
 
@@ -267,6 +274,8 @@ export default function ProductScreen() {
       else if (editing) payload.description = null;
       if (discountPrice != null) payload.discountPrice = discountPrice;
       else if (editing) payload.discountPrice = null;
+      if (shippingWeightKg != null) payload.shippingWeightKg = shippingWeightKg;
+      else if (editing) payload.shippingWeightKg = null;
       if (categoryId) payload.categoryId = categoryId;
       else if (editing) payload.categoryId = null;
       if (unitId) payload.unitId = unitId;
@@ -483,6 +492,9 @@ export default function ProductScreen() {
           </View>
           <Field label="Cost price" hint="Optional — what it costs you; used for profit reports.">
             <Input value={form.costPrice} onChangeText={(t) => set({ costPrice: decimal(t) })} keyboardType="decimal-pad" placeholder="0.00" />
+          </Field>
+          <Field label="Shipping weight (kg)" hint="Required for Shipbubble quotes. Enter the packed product weight, up to 3 decimal places.">
+            <Input value={form.shippingWeightKg} onChangeText={(t) => set({ shippingWeightKg: t.replace(/[^0-9.]/g, "") })} keyboardType="decimal-pad" placeholder="e.g. 0.500" />
           </Field>
 
           <SelectField label="Category" value={form.categoryId} options={catOptions} onChange={(v) => set({ categoryId: v })} placeholder="No category" />

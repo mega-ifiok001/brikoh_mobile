@@ -32,6 +32,7 @@ const blank = () => ({
   description: "",
   costPrice: "",
   discountPrice: "",
+  shippingWeightKg: "",
   lowStockThreshold: "",
 });
 
@@ -224,6 +225,8 @@ export default function NewProductScreen() {
     }
     const lowStock = form.lowStockThreshold.trim() ? Number(form.lowStockThreshold) : null;
     if (lowStock !== null && (!Number.isInteger(lowStock) || lowStock < 0)) { setStep(2); setError("The low-stock reminder must be a whole number of zero or more."); return; }
+    const shippingWeightKg = form.shippingWeightKg.trim() ? Number(form.shippingWeightKg) : null;
+    if (shippingWeightKg !== null && (!Number.isFinite(shippingWeightKg) || shippingWeightKg < 0.001 || shippingWeightKg > 99999.999 || !/^\d+(?:\.\d{1,3})?$/.test(form.shippingWeightKg.trim()))) { setStep(2); setError("Shipping weight must be between 0.001 and 99,999.999 kg with up to 3 decimal places."); return; }
     if (optionsEnabled && (!validateOptions())) { setStep(1); return; }
 
     setBusy(true);
@@ -248,6 +251,7 @@ export default function NewProductScreen() {
       if (form.description.trim()) payload.description = form.description.trim();
       if (costPrice !== null) payload.costPrice = costPrice;
       if (discountPrice !== null) payload.discountPrice = discountPrice;
+      if (shippingWeightKg !== null) payload.shippingWeightKg = shippingWeightKg;
       if (categoryId && categoryId !== "__new") payload.categoryId = categoryId;
       if (unitId && unitId !== "__new") payload.unitId = unitId;
       if (lowStock !== null) payload.lowStockThreshold = lowStock;
@@ -427,6 +431,9 @@ export default function NewProductScreen() {
                 </Field>
                 <Field label={`Special selling price (${currency})`} hint="Optional. This must be lower than the regular selling price.">
                   <Input value={form.discountPrice} onChangeText={(value) => update({ discountPrice: decimal(value) })} placeholder="Leave blank if there is no discount" keyboardType="decimal-pad" />
+                </Field>
+                <Field label="Shipping weight (kg)" hint="Optional unless you offer Shipbubble delivery. Use the packed product weight, up to 3 decimal places.">
+                  <Input value={form.shippingWeightKg} onChangeText={(value) => update({ shippingWeightKg: value.replace(/[^0-9.]/g, "") })} placeholder="e.g. 0.500" keyboardType="decimal-pad" />
                 </Field>
                 <Field label="Remind me when stock gets low" hint="Brikoh will flag the product when stock reaches this number.">
                   <Input value={form.lowStockThreshold} onChangeText={(value) => update({ lowStockThreshold: digits(value) })} placeholder="e.g. 5" keyboardType="number-pad" />

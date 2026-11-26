@@ -5,7 +5,7 @@ import { api } from "../../../src/lib/api";
 import { useAuth } from "../../../src/context/AuthContext";
 import { apiErrorMessage, asList, fm } from "../../../src/lib/format";
 import { Button, Card, EmptyState, Field, Input, Pill, Sheet, T, toast } from "../../../src/components/ui";
-import { AddButton, ConfirmSheet, Segmented, SwitchRow } from "../../../src/components/kit";
+import { AddButton, ConfirmSheet, Segmented, SelectField, SwitchRow } from "../../../src/components/kit";
 import { SettingsScreen } from "../../../src/components/settings/bits";
 import { C } from "../../../src/theme";
 
@@ -19,7 +19,7 @@ function normalizeFee(raw: string): string | null {
   return n.toFixed(2);
 }
 
-const BLANK = { name: "", kind: "DELIVERY" as "PICKUP" | "DELIVERY", description: "", baseFee: "", isActive: true, pickupAddressText: "" };
+const BLANK = { name: "", kind: "DELIVERY" as "PICKUP" | "DELIVERY", provider: "MANUAL" as "MANUAL" | "SHIPBUBBLE", description: "", baseFee: "", isActive: true, pickupAddressText: "" };
 
 export default function DeliveryOptions() {
   const { me } = useAuth();
@@ -65,6 +65,7 @@ export default function DeliveryOptions() {
     setForm({
       name: o.name || "",
       kind: o.kind === "PICKUP" ? "PICKUP" : "DELIVERY",
+      provider: o.provider === "SHIPBUBBLE" ? "SHIPBUBBLE" : "MANUAL",
       description: o.description || "",
       baseFee: o.baseFee != null ? String(o.baseFee) : "",
       isActive: o.isActive !== false,
@@ -78,17 +79,18 @@ export default function DeliveryOptions() {
     const name = form.name.trim();
     if (!name) return setFormErr("Give the option a name.");
     if (name.length > 200) return setFormErr("The name must be 200 characters or fewer.");
-    const baseFee = normalizeFee(form.baseFee);
+    const baseFee = form.provider === "SHIPBUBBLE" ? "0.00" : normalizeFee(form.baseFee);
     if (baseFee === null) return setFormErr("Base fee must be a number with at most 2 decimal places (max 99,999,999.99).");
     setFormBusy(true);
     setFormErr("");
     const payload: any = {
       name,
-      kind: form.kind,
+      kind: form.provider === "SHIPBUBBLE" ? "DELIVERY" : form.kind,
+      provider: form.provider,
       description: form.description.trim() || null,
-      baseFee,
       isActive: form.isActive,
-      ...(form.kind === "PICKUP" ? { pickupAddressText: form.pickupAddressText.trim() || null } : {}),
+      ...(form.provider === "MANUAL" ? { baseFee } : {}),
+      ...(form.provider === "MANUAL" && form.kind === "PICKUP" ? { pickupAddressText: form.pickupAddressText.trim() || null } : {}),
     };
     try {
       if (editing) {
@@ -173,7 +175,7 @@ export default function DeliveryOptions() {
                     {o.name}
                   </T>
                   <T w="regular" size={12.5} color={C.ink400} numberOfLines={2}>
-                    Base fee: {fm(o.baseFee || "0", currency)}
+                    {o.provider === "SHIPBUBBLE" ? "Courier rates are quoted at checkout" : `Base fee: ${fm(o.baseFee || "0", currency)}`}
                     {o.description ? ` · ${o.description}` : ""}
                   </T>
                 </View>
@@ -181,6 +183,7 @@ export default function DeliveryOptions() {
               </View>
               <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
                 <Pill tone={pickup ? "neutral" : "brand"}>{pickup ? "Pickup" : "Delivery"}</Pill>
+                {o.provider === "SHIPBUBBLE" ? <Pill tone="brand">Shipbubble</Pill> : null}
                 {o.isActive === false ? <Pill tone="neutral">Hidden</Pill> : null}
               </View>
               {pickup && addr ? (
@@ -216,7 +219,22 @@ export default function DeliveryOptions() {
           <Field label="Name" hint='e.g. "Delivery rider", "Pick up at store"'>
             <Input value={form.name} onChangeText={(v) => setForm({ ...form, name: v })} placeholder="Delivery rider" maxLength={200} />
           </Field>
-          <Field label="Kind">
+          <Field label="Provider">
+            <SelectField
+              value={form.provider}
+              options={[
+                { value: "MANUAL", label: "Manual delivery or pickup" },
+                { value: "SHIPBUBBLE", label: "Shipbubble courier" },
+              ]}
+              onChange={(provider) => setForm({ ...form, provider: provider as "MANUAL" | "SHIPBUBBLE", ...(provider === "SHIPBUBBLE" ? { kind: "DELIVERY" as const } : {}) })}
+            />
+          </Field>
+          {form.provider === "SHIPBUBBLE" ? (
+            <T w="regular" size={12} color={C.ink400} style={{ lineHeight: 18 }}>
+              Courier rates are quoted at storefront checkout. Configure your pickup address and package defaults in Settings → Shipbubble shipping, and add shipping weight to each product.
+            </T>
+          ) : null}
+          {form.provider === "MANUAL" ? <Field label="Kind">
             <Segmented
               options={[
                 { value: "DELIVERY", label: "Delivery" },
@@ -225,14 +243,14 @@ export default function DeliveryOptions() {
               value={form.kind}
               onChange={(v) => setForm({ ...form, kind: v as "PICKUP" | "DELIVERY" })}
             />
-          </Field>
-          <Field label={`Base fee (${currency})`} hint="Flat component, always charged.">
+          </Field> : null}
+          {form.provider === "MANUAL" ? <Field label={`Base fee (${currency})`} hint="Flat component, always charged.">
             <Input value={form.baseFee} onChangeText={(v) => setForm({ ...form, baseFee: v })} placeholder="0.00" keyboardType="decimal-pad" />
-          </Field>
+          </Field> : null}
           <Field label="Description" hint='Optional, e.g. "2-4 working days".'>
             <Input value={form.description} onChangeText={(v) => setForm({ ...form, description: v })} maxLength={500} />
           </Field>
-          {form.kind === "PICKUP" ? (
+          {form.provider === "MANUAL" && form.kind === "PICKUP" ? (
             <Field label="Pickup address" hint="Shown to the buyer at checkout. Optional.">
               <Input value={form.pickupAddressText} onChangeText={(v) => setForm({ ...form, pickupAddressText: v })} maxLength={500} multiline placeholder="12 Marina Rd, Lagos Island" />
             </Field>

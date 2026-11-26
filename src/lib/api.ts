@@ -149,11 +149,12 @@ interface RawOpts {
   method?: string;
   body?: any;
   auth?: boolean;
+  headers?: Record<string, string>;
 }
 
 async function rawFetch(
   path: string,
-  { method = "GET", body, auth = true }: RawOpts
+  { method = "GET", body, auth = true, headers: extraHeaders }: RawOpts
 ): Promise<{ status: number; json: any; text: string }> {
   const run = async (): Promise<Response> => {
     const ctrl = new AbortController();
@@ -162,6 +163,7 @@ async function rawFetch(
       const headers: Record<string, string> = { Accept: "application/json" };
       if (body !== undefined) headers["Content-Type"] = "application/json";
       if (auth && accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+      Object.assign(headers, extraHeaders);
       return await fetch(`${API_BASE}${path}`, {
         method,
         headers,
@@ -284,7 +286,7 @@ export const api = {
   getText: (path: string) => requestText(path, { method: "GET" }),
   post: (path: string, body?: any) => request(path, { method: "POST", body: body ?? {} }),
   put: (path: string, body?: any) => request(path, { method: "PUT", body: body ?? {} }),
-  patch: (path: string, body?: any) => request(path, { method: "PATCH", body: body ?? {} }),
+  patch: (path: string, body?: any, headers?: Record<string, string>) => request(path, { method: "PATCH", body: body ?? {}, headers }),
   del: (path: string) => request(path, { method: "DELETE" }),
   publicGet: (path: string) => request(path, { method: "GET", auth: false }),
   publicPost: (path: string, body?: any) =>

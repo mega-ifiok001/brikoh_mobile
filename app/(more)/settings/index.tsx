@@ -56,6 +56,7 @@ export default function SettingsHub() {
           <ListRow icon="business-outline" title="Business" sub="Store name, type, location, currency" right={chev} onPress={go("/settings/business")} />
           <ListRow icon="storefront-outline" title="Storefront" sub="Template, hero, WhatsApp, social links" right={chev} onPress={go("/settings/storefront")} />
           <ListRow icon="bicycle-outline" title="Delivery options" sub="Pickup and delivery choices at checkout" right={chev} onPress={go("/settings/delivery")} />
+          <ListRow icon="cube-outline" title="Shipbubble shipping" sub="Pickup address and default package dimensions" right={chev} onPress={go("/settings/shipbubble")} />
           <ListRow icon="card-outline" title="Bank accounts" sub="Settlement accounts for bank transfers" right={chev} onPress={go("/settings/bank")} last />
         </Card>
 
